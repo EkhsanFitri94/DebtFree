@@ -20,12 +20,13 @@ No backend is required. All processing stays inside your browser.
 
 ## Upload CTOS Data (Private)
 
-Use the `Upload CTOS Data` button in Step 3 and choose a local `.json` file.
+Use the `Upload CTOS Data` button in Step 3 and choose a local `.json` or `.csv` file.
 
 Supported top-level formats:
 
 - An array of debt objects
 - Or an object with `debts` plus optional `profile`
+- Or CSV with a header row
 
 Example:
 
@@ -70,6 +71,29 @@ Example:
 ```
 
 Status values accepted: `active`, `written-off` (or `wo`), `ffs`, `trade`, `family`, `other`.
+
+CSV columns supported (case-insensitive):
+
+- `name` or `debtName` or `account`
+- `status`
+- `outstanding` or `balance`
+- `interestRate`, `minPayment` (for active debts)
+- `ffAmount`, `ffDeadline` (for F&F debts)
+- `lender` or `creditor`
+
+Optional profile columns in CSV (read from first valid row):
+
+- `salary`, `savings`
+- `rent`, `utilities`, `food`, `transportation`, `phone`, `insurance`, `other`
+
+Minimal CSV example:
+
+```csv
+name,status,outstanding,interestRate,minPayment,lender
+CIMB Personal Financing 1,written-off,1100,0,0,CIMB
+Car Loan,active,22000,4.2,540,Maybank
+Old Card Account,ffs,9000,0,0,Public Bank
+```
 
 ## Author
 
