@@ -1,0 +1,764 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DebtFree — CTOS Smart Debt Settlement Planner</title>
+<meta name="description" content="Parse your CTOS/CCRIS report and generate a personalized debt settlement roadmap with Written-Off, F&F, and active loan strategies.">
+<meta name="author" content="Muhammad Ekhsan Fitri bin Zamrus">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📊</text></svg>">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #080c0a;
+    --bg2: #0d1310;
+    --card: #111c16;
+    --card2: #162319;
+    --card3: #1a2b21;
+    --border: #1a2e24;
+    --border2: #244435;
+    --fg: #e4f0e8;
+    --fg2: #afc8b8;
+    --muted: #5a8570;
+    --accent: #00e68a;
+    --accent2: #00cc7a;
+    --accent-dim: rgba(0,230,138,.08);
+    --danger: #ff5252;
+    --danger-dim: rgba(255,82,82,.08);
+    --warn: #ffb347;
+    --warn-dim: rgba(255,179,71,.08);
+    --info: #3ec9f0;
+    --info-dim: rgba(62,201,240,.08);
+    --purple: #b57aff;
+    --purple-dim: rgba(181,122,255,.08);
+    --teal: #2dd4bf;
+    --teal-dim: rgba(45,212,191,.08);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--fg); min-height: 100vh; overflow-x: hidden; }
+  h1,h2,h3,h4,h5 { font-family: 'Space Grotesk', sans-serif; }
+
+  .bg-mesh {
+    position: fixed; inset: 0; pointer-events: none; z-index: 0;
+    background:
+      radial-gradient(ellipse 600px 400px at 85% 10%, rgba(0,230,138,.04) 0%, transparent 70%),
+      radial-gradient(ellipse 500px 500px at 10% 90%, rgba(0,204,122,.03) 0%, transparent 70%),
+      radial-gradient(ellipse 300px 300px at 50% 50%, rgba(62,201,240,.015) 0%, transparent 70%);
+  }
+
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 24px; transition: border-color .3s, box-shadow .3s; }
+  .card:hover { border-color: var(--border2); }
+  .card-glow { box-shadow: 0 0 40px rgba(0,230,138,.03); }
+
+  .input-field {
+    width: 100%; background: var(--bg2); border: 1px solid var(--border); border-radius: 10px;
+    padding: 12px 16px; color: var(--fg); font-size: 15px; font-family: 'DM Sans', sans-serif;
+    transition: all .25s; outline: none;
+  }
+  .input-field:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
+  .input-field::placeholder { color: var(--muted); opacity: .4; }
+  .input-field:disabled { opacity: .25; cursor: not-allowed; }
+
+  select.input-field {
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%235a8570' stroke-width='2' fill='none'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 14px center; padding-right: 40px;
+  }
+
+  .btn { font-family: 'DM Sans', sans-serif; border: none; cursor: pointer; transition: all .25s; display: inline-flex; align-items: center; gap: 8px; }
+  .btn:active { transform: scale(.97); }
+  .btn-primary { background: var(--accent); color: var(--bg); font-weight: 600; font-family: 'Space Grotesk', sans-serif; padding: 12px 28px; border-radius: 10px; font-size: 15px; }
+  .btn-primary:hover { background: var(--accent2); box-shadow: 0 8px 30px rgba(0,230,138,.18); transform: translateY(-1px); }
+  .btn-secondary { background: var(--card2); color: var(--fg2); font-weight: 500; padding: 10px 20px; border-radius: 10px; border: 1px solid var(--border); font-size: 14px; }
+  .btn-secondary:hover { background: var(--border); color: var(--fg); }
+  .btn-ghost { background: transparent; color: var(--muted); font-weight: 500; padding: 8px 14px; border-radius: 8px; font-size: 13px; }
+  .btn-ghost:hover { background: var(--card2); color: var(--fg2); }
+  .btn-danger { background: var(--danger-dim); color: var(--danger); font-weight: 500; padding: 8px 14px; border-radius: 8px; border: 1px solid rgba(255,82,82,.15); font-size: 13px; }
+  .btn-danger:hover { background: rgba(255,82,82,.15); }
+  .btn-sm { padding: 7px 14px; font-size: 13px; border-radius: 8px; }
+
+  /* Steps */
+  .step-bar { display: flex; align-items: center; gap: 0; margin-bottom: 48px; }
+  .step-node { width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 600; font-family: 'Space Grotesk'; background: var(--card2); border: 2px solid var(--border); color: var(--muted); transition: all .4s; flex-shrink: 0; position: relative; }
+  .step-node.active { background: var(--accent); border-color: var(--accent); color: var(--bg); box-shadow: 0 0 24px rgba(0,230,138,.25); }
+  .step-node.done { background: var(--accent-dim); border-color: var(--accent2); color: var(--accent); }
+  .step-rail { flex: 1; height: 2px; background: var(--border); transition: background .4s; }
+  .step-rail.done { background: var(--accent2); }
+
+  /* Sections */
+  .panel { display: none; animation: panelIn .45s ease; }
+  .panel.active { display: block; }
+  @keyframes panelIn { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
+
+  .label { font-size: 13px; color: var(--muted); font-weight: 500; margin-bottom: 6px; display: block; }
+
+  .badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; letter-spacing: .3px; }
+
+  .bar-track { height: 7px; border-radius: 4px; background: var(--bg2); overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 4px; transition: width .8s ease; }
+
+  /* Debt row */
+  .d-row { display: grid; grid-template-columns: 32px 1.1fr .85fr .75fr .65fr .6fr .6fr 38px; gap: 8px; align-items: start; padding: 14px 0; border-bottom: 1px solid var(--border); animation: panelIn .3s; }
+  .d-header { align-items: center; border-bottom: 2px solid var(--border); padding-bottom: 8px; }
+
+  /* Schedule */
+  .sch-row { display: grid; grid-template-columns: 68px 1fr 1fr 1fr 140px; gap: 10px; align-items: center; padding: 9px 0; border-bottom: 1px solid rgba(26,46,36,.4); font-size: 12px; }
+  .sch-row.hdr { font-weight: 600; color: var(--muted); border-bottom: 1px solid var(--border); }
+
+  /* Strategy card */
+  .strat-card { cursor: pointer; transition: all .3s; position: relative; overflow: hidden; }
+  .strat-card::after { content: ''; position: absolute; top: 0; left: 0; width: 4px; height: 100%; background: var(--accent); transform: scaleY(0); transition: transform .3s; transform-origin: top; }
+  .strat-card.sel { border-color: var(--accent); background: var(--accent-dim); }
+  .strat-card.sel::after { transform: scaleY(1); }
+  .strat-card:hover:not(.sel) { border-color: var(--border2); }
+
+  /* Alert blocks */
+  .alert-wo { background: var(--danger-dim); border: 1px solid rgba(255,82,82,.12); border-radius: 14px; padding: 20px; }
+  .alert-ffs { background: var(--purple-dim); border: 1px solid rgba(181,122,255,.12); border-radius: 14px; padding: 20px; }
+  .alert-trade { background: var(--warn-dim); border: 1px solid rgba(255,179,71,.12); border-radius: 14px; padding: 20px; }
+
+  /* Toast */
+  .toast { position: fixed; top: 20px; right: 20px; padding: 14px 22px; border-radius: 12px; font-size: 14px; font-weight: 500; z-index: 9999; transform: translateX(140%); transition: transform .45s cubic-bezier(.175,.885,.32,1.275); display: flex; align-items: center; gap: 10px; max-width: 380px; }
+  .toast.show { transform: translateX(0); }
+  .toast.ok { background: var(--accent-dim); border: 1px solid var(--accent2); color: var(--accent); }
+  .toast.err { background: var(--danger-dim); border: 1px solid rgba(255,82,82,.25); color: var(--danger); }
+
+  /* README modal */
+  .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,.7); backdrop-filter: blur(6px); z-index: 1000; display: none; align-items: center; justify-content: center; padding: 20px; }
+  .modal-bg.open { display: flex; animation: fadeIn .3s; }
+  .modal-box { background: var(--card); border: 1px solid var(--border); border-radius: 20px; max-width: 720px; width: 100%; max-height: 85vh; overflow-y: auto; padding: 32px; }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+  /* Print */
+  @media print {
+    .bg-mesh, .step-bar, .no-print { display: none !important; }
+    body { background: #fff; color: #111; }
+    .card { border-color: #ddd; background: #f9f9f9; }
+    .panel { display: block !important; }
+    #section1, #section2, #section3 { display: none !important; }
+    #section4 { display: block !important; }
+  }
+
+  ::-webkit-scrollbar { width: 5px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
+  @media (max-width: 860px) {
+    .d-row { grid-template-columns: 1fr 1fr; gap: 6px; }
+    .d-row .hide-sm { display: none; }
+    .sch-row { grid-template-columns: 60px 1fr 1fr 1fr; }
+    .sch-row .hide-sm { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<div class="bg-mesh"></div>
+<div id="toast" class="toast"></div>
+
+<!-- README Modal -->
+<div class="modal-bg" id="readmeModal">
+  <div class="modal-box">
+    <div class="flex items-center justify-between mb-6">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-400 to-green-600 flex items-center justify-center">
+          <i class="fas fa-chart-line text-black text-lg"></i>
+        </div>
+        <div>
+          <h2 class="font-bold text-lg">DebtFree</h2>
+          <p class="text-xs" style="color:var(--muted)">CTOS Smart Debt Settlement Planner</p>
+        </div>
+      </div>
+      <button class="btn btn-ghost" onclick="closeReadme()" aria-label="Close"><i class="fas fa-times"></i></button>
+    </div>
+
+    <div class="space-y-5 text-sm" style="color:var(--fg2)">
+      <div>
+        <h3 class="font-bold text-base mb-2" style="color:var(--fg)"><i class="fab fa-github mr-2" style="color:var(--accent)"></i>About This Project</h3>
+        <p>DebtFree is a client-side financial planning tool that parses your CTOS/CCRIS credit report data and generates a personalized debt settlement roadmap. It handles <strong>Written-Off (W)</strong> accounts, <strong>Full & Final Settlement (F&F)</strong> offers, <strong>Trade Defaults</strong>, and <strong>Active Loans</strong> with strategy-based payoff projections.</p>
+      </div>
+
+      <div>
+        <h3 class="font-bold text-base mb-2" style="color:var(--fg)"><i class="fas fa-star mr-2" style="color:var(--warn)"></i>Features</h3>
+        <ul class="space-y-1 ml-4" style="list-style:disc">
+          <li>4-step wizard: Income → Commitments → Debts → Plan</li>
+          <li>CTOS-specific debt statuses: Active, Written-Off, F&F, Trade Default</li>
+          <li>Sample CTOS data loader for quick testing</li>
+          <li>Avalanche vs Snowball strategy comparison</li>
+          <li>Month-by-month payment schedule with interest tracking</li>
+          <li>Interactive charts: payoff timeline & payment breakdown</li>
+          <li>Financial health check with debt-to-income ratio</li>
+          <li>CTOS score recovery guidance and AKPK referral</li>
+          <li>F&F negotiation range calculator (30-70%)</li>
+          <li>Print-ready report output</li>
+          <li>100% client-side — no data leaves your browser</li>
+        </ul>
+      </div>
+
+      <div>
+        <h3 class="font-bold text-base mb-2" style="color:var(--fg)"><i class="fas fa-code mr-2" style="color:var(--info)"></i>Tech Stack</h3>
+        <div class="grid grid-cols-2 gap-2">
+          <span class="badge" style="background:var(--info-dim);color:var(--info)">HTML5</span>
+          <span class="badge" style="background:var(--accent-dim);color:var(--accent)">Tailwind CSS</span>
+          <span class="badge" style="background:var(--warn-dim);color:var(--warn)">JavaScript (ES6+)</span>
+          <span class="badge" style="background:var(--purple-dim);color:var(--purple)">Chart.js 4</span>
+        </div>
+      </div>
+
+      <div>
+        <h3 class="font-bold text-base mb-2" style="color:var(--fg)"><i class="fas fa-folder-open mr-2" style="color:var(--teal)"></i>Repository Structure</h3>
+        <pre style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:14px;font-size:12px;color:var(--fg2);overflow-x:auto;font-family:monospace">DebtFree/
+├── index.html          ← Main application (this file)
+├── README.md           ← Project documentation
+├── LICENSE             ← MIT License
+└── .gitignore          ← Git ignore rules</pre>
+      </div>
+
+      <div>
+        <h3 class="font-bold text-base mb-2" style="color:var(--fg)"><i class="fas fa-rocket mr-2" style="color:var(--accent)"></i>How to Use</h3>
+        <ol class="space-y-1 ml-4" style="list-style:decimal">
+          <li>Open <code style="background:var(--bg2);padding:2px 6px;border-radius:4px;font-size:12px">index.html</code> in any modern browser</li>
+          <li>Enter your income details and monthly commitments</li>
+          <li>Add your debts with correct CTOS status (use "Load Sample CTOS Data" for demo)</li>
+          <li>Click "Generate Plan" to get your personalized roadmap</li>
+          <li>Compare strategies, review the schedule, and follow the action plan</li>
+        </ol>
+      </div>
+
+      <div>
+        <h3 class="font-bold text-base mb-2" style="color:var(--fg)"><i class="fas fa-shield-alt mr-2" style="color:var(--danger)"></i>Privacy</h3>
+        <p>All calculations run entirely in your browser. No data is sent to any server, API, or third party. Your financial information never leaves your device.</p>
+      </div>
+
+      <div>
+        <h3 class="font-bold text-base mb-2" style="color:var(--fg)"><i class="fas fa-balance-scale mr-2" style="color:var(--warn)"></i>License</h3>
+        <p>MIT License — free to use, modify, and distribute. See <code style="background:var(--bg2);padding:2px 6px;border-radius:4px;font-size:12px">LICENSE</code> file.</p>
+      </div>
+
+      <div class="pt-3" style="border-top:1px solid var(--border)">
+        <p class="text-xs" style="color:var(--muted)">Built by <strong style="color:var(--fg2)">Muhammad Ekhsan Fitri bin Zamrus</strong> &middot; <a href="https://github.com/EkhsanFitri94" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none">github.com/EkhsanFitri94</a></p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="relative z-10 max-w-6xl mx-auto px-4 py-8">
+
+  <!-- Header -->
+  <header class="text-center mb-10">
+    <div class="inline-flex items-center gap-3 mb-4">
+      <div class="w-11 h-11 rounded-xl bg-gradient-to-br from-emerald-400 to-green-600 flex items-center justify-center shadow-lg shadow-emerald-500/10">
+        <i class="fas fa-chart-line text-black text-lg"></i>
+      </div>
+      <h1 class="text-3xl font-bold tracking-tight">DebtFree</h1>
+    </div>
+    <p class="text-sm mb-4" style="color:var(--muted);max-width:480px;margin:0 auto">CTOS Smart Debt Settlement Planner — handles Written-Off, F&F, Trade Defaults & Active Loans</p>
+    <button class="btn btn-ghost btn-sm" onclick="openReadme()"><i class="fab fa-github"></i> View README</button>
+  </header>
+
+  <!-- Steps -->
+  <div class="step-bar max-w-lg mx-auto mb-10">
+    <div class="step-node active" id="dot1">1</div><div class="step-rail" id="rail1"></div>
+    <div class="step-node" id="dot2">2</div><div class="step-rail" id="rail2"></div>
+    <div class="step-node" id="dot3">3</div><div class="step-rail" id="rail3"></div>
+    <div class="step-node" id="dot4">4</div>
+  </div>
+
+  <!-- ==================== SECTION 1: INCOME ==================== -->
+  <section class="panel active" id="section1">
+    <div class="max-w-2xl mx-auto">
+      <h2 class="text-2xl font-bold mb-1">Your Income</h2>
+      <p class="mb-8 text-sm" style="color:var(--muted)">All money coming in each month.</p>
+
+      <div class="card card-glow mb-5">
+        <div class="flex items-center gap-3 mb-5">
+          <div class="w-9 h-9 rounded-lg flex items-center justify-center" style="background:var(--accent-dim)"><i class="fas fa-briefcase" style="color:var(--accent);font-size:14px"></i></div>
+          <div><h3 class="font-semibold text-sm">Primary Salary</h3><p class="text-xs" style="color:var(--muted)">Monthly take-home pay after EPF/SOCSO</p></div>
+        </div>
+        <label class="label">Monthly Salary (RM)</label>
+        <input type="number" class="input-field" id="salary" placeholder="e.g. 3500" min="0" step="100" aria-label="Monthly salary">
+      </div>
+
+      <div class="card mb-5">
+        <div class="flex items-center gap-3 mb-5">
+          <div class="w-9 h-9 rounded-lg flex items-center justify-center" style="background:var(--info-dim)"><i class="fas fa-laptop-code" style="color:var(--info);font-size:14px"></i></div>
+          <div><h3 class="font-semibold text-sm">Side Income</h3><p class="text-xs" style="color:var(--muted)">Freelance, part-time, investments, etc.</p></div>
+        </div>
+        <div id="sideIncomeList"></div>
+        <button class="btn btn-secondary btn-sm mt-3" onclick="addSI()"><i class="fas fa-plus" style="font-size:11px"></i> Add Side Income</button>
+      </div>
+
+      <div class="card mb-8">
+        <div class="flex items-center gap-3 mb-5">
+          <div class="w-9 h-9 rounded-lg flex items-center justify-center" style="background:var(--warn-dim)"><i class="fas fa-piggy-bank" style="color:var(--warn);font-size:14px"></i></div>
+          <div><h3 class="font-semibold text-sm">Current Savings</h3><p class="text-xs" style="color:var(--muted)">Cash you can allocate for F&F/settlements</p></div>
+        </div>
+        <label class="label">Total Savings (RM)</label>
+        <input type="number" class="input-field" id="savings" placeholder="e.g. 1500" min="0" step="100" aria-label="Total savings">
+      </div>
+
+      <div class="flex justify-end no-print"><button class="btn btn-primary" onclick="go(2)">Continue <i class="fas fa-arrow-right" style="font-size:12px"></i></button></div>
+    </div>
+  </section>
+
+  <!-- ==================== SECTION 2: COMMITMENTS ==================== -->
+  <section class="panel" id="section2">
+    <div class="max-w-2xl mx-auto">
+      <h2 class="text-2xl font-bold mb-1">Monthly Commitments</h2>
+      <p class="mb-8 text-sm" style="color:var(--muted)">Fixed non-debt expenses.</p>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
+        <div class="card"><label class="label"><i class="fas fa-home mr-2" style="color:var(--accent)"></i>Rental / Mortgage</label><input type="number" class="input-field" id="cRent" placeholder="0" min="0" step="50"></div>
+        <div class="card"><label class="label"><i class="fas fa-bolt mr-2" style="color:var(--warn)"></i>Utilities</label><input type="number" class="input-field" id="cUtil" placeholder="0" min="0" step="50"></div>
+        <div class="card"><label class="label"><i class="fas fa-utensils mr-2" style="color:var(--info)"></i>Food & Groceries</label><input type="number" class="input-field" id="cFood" placeholder="0" min="0" step="50"></div>
+        <div class="card"><label class="label"><i class="fas fa-car mr-2" style="color:var(--accent)"></i>Transportation</label><input type="number" class="input-field" id="cTrans" placeholder="0" min="0" step="50"></div>
+        <div class="card"><label class="label"><i class="fas fa-mobile-alt mr-2" style="color:var(--warn)"></i>Phone & Subscriptions</label><input type="number" class="input-field" id="cPhone" placeholder="0" min="0" step="50"></div>
+        <div class="card"><label class="label"><i class="fas fa-heartbeat mr-2" style="color:var(--danger)"></i>Insurance</label><input type="number" class="input-field" id="cIns" placeholder="0" min="0" step="50"></div>
+        <div class="card sm:col-span-2"><label class="label"><i class="fas fa-ellipsis-h mr-2" style="color:var(--muted)"></i>Other Expenses</label><input type="number" class="input-field" id="cOther" placeholder="0" min="0" step="50"></div>
+      </div>
+      <div class="flex justify-between no-print">
+        <button class="btn btn-secondary btn-sm" onclick="go(1)"><i class="fas fa-arrow-left" style="font-size:12px"></i> Back</button>
+        <button class="btn btn-primary" onclick="go(3)">Continue <i class="fas fa-arrow-right" style="font-size:12px"></i></button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== SECTION 3: DEBTS ==================== -->
+  <section class="panel" id="section3">
+    <div class="max-w-5xl mx-auto">
+      <h2 class="text-2xl font-bold mb-1">Your Debts</h2>
+      <p class="mb-5 text-sm" style="color:var(--muted)">Match each debt to its CTOS status for accurate planning.</p>
+
+      <!-- Legend -->
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
+        <div class="alert-wo" style="padding:14px 16px">
+          <div class="flex items-center gap-2 mb-1"><i class="fas fa-ban" style="color:var(--danger);font-size:12px"></i><span class="font-semibold text-xs" style="color:var(--danger)">Written-Off (W)</span></div>
+          <p class="text-xs" style="color:var(--fg2)">Bank stopped collecting. No monthly payment needed, but balance stays on CTOS. Must negotiate F&F to remove.</p>
+        </div>
+        <div class="alert-ffs" style="padding:14px 16px">
+          <div class="flex items-center gap-2 mb-1"><i class="fas fa-file-signature" style="color:var(--purple);font-size:12px"></i><span class="font-semibold text-xs" style="color:var(--purple)">Full & Final Settlement</span></div>
+          <p class="text-xs" style="color:var(--fg2)">Contract ended. Bank offers discounted lump-sum to close permanently. No more payments or interest after.</p>
+        </div>
+        <div class="card" style="padding:14px 16px">
+          <div class="flex items-center gap-2 mb-1"><i class="fas fa-sync-alt" style="color:var(--accent);font-size:12px"></i><span class="font-semibold text-xs" style="color:var(--accent)">Active / Trade Default</span></div>
+          <p class="text-xs" style="color:var(--fg2)">Active loan with monthly payments, or non-bank trade creditor default (Coway, etc.).</p>
+        </div>
+      </div>
+
+      <div class="card mb-5">
+        <div class="overflow-x-auto">
+          <div class="d-row d-header">
+            <span></span>
+            <span class="text-xs font-semibold" style="color:var(--muted)">NAME</span>
+            <span class="text-xs font-semibold" style="color:var(--muted)">STATUS</span>
+            <span class="text-xs font-semibold" style="color:var(--muted)">OUTSTANDING</span>
+            <span class="text-xs font-semibold hide-sm" style="color:var(--muted)">INTEREST %</span>
+            <span class="text-xs font-semibold hide-sm" style="color:var(--muted)">MIN PAY</span>
+            <span class="text-xs font-semibold" style="color:var(--muted)">F&F AMT</span>
+            <span></span>
+          </div>
+          <div id="debtList"></div>
+        </div>
+        <div class="flex gap-3 mt-4 flex-wrap no-print">
+          <button class="btn btn-secondary btn-sm" onclick="addDebt()"><i class="fas fa-plus" style="font-size:11px"></i> Add Debt</button>
+          <button class="btn btn-secondary btn-sm" onclick="loadCTOS()" style="border-color:rgba(181,122,255,.3);color:var(--purple)"><i class="fas fa-file-import" style="font-size:11px"></i> Load Sample CTOS Data</button>
+        </div>
+      </div>
+
+      <div class="flex justify-between no-print">
+        <button class="btn btn-secondary btn-sm" onclick="go(2)"><i class="fas fa-arrow-left" style="font-size:12px"></i> Back</button>
+        <button class="btn btn-primary" onclick="go(4)"><i class="fas fa-magic" style="font-size:12px"></i> Generate Plan</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== SECTION 4: RESULTS ==================== -->
+  <section class="panel" id="section4">
+    <div class="max-w-5xl mx-auto">
+      <div class="flex items-center justify-between mb-2 no-print">
+        <h2 class="text-2xl font-bold">Your Settlement Plan</h2>
+        <button class="btn btn-ghost btn-sm" onclick="openReadme()"><i class="fab fa-github"></i></button>
+      </div>
+      <p class="mb-8 text-sm" style="color:var(--muted)">Personalized roadmap with CTOS-specific action items.</p>
+
+      <div class="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-6" id="statsGrid"></div>
+      <div id="woBlock" class="mb-6" style="display:none"></div>
+      <div id="ffsBlock" class="mb-6" style="display:none"></div>
+      <div id="tradeBlock" class="mb-6" style="display:none"></div>
+      <div class="card mb-6" id="healthBlock"></div>
+      <div class="mb-6"><h3 class="text-base font-bold mb-3">Strategy for Active Loans</h3><div class="grid grid-cols-1 md:grid-cols-2 gap-4" id="stratGrid"></div></div>
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-6">
+        <div class="card"><h4 class="font-semibold text-sm mb-4" style="color:var(--fg2)">Payoff Timeline</h4><canvas id="chartLine" height="260"></canvas></div>
+        <div class="card"><h4 class="font-semibold text-sm mb-4" style="color:var(--fg2)">Month 1 Breakdown</h4><canvas id="chartPie" height="260"></canvas></div>
+      </div>
+      <div class="card mb-6" id="progressBlock"></div>
+      <div class="card mb-6">
+        <div class="flex items-center justify-between mb-4">
+          <h4 class="font-semibold text-sm" style="color:var(--fg2)">Monthly Schedule</h4>
+          <span class="badge" style="background:var(--accent-dim);color:var(--accent)" id="moLabel"></span>
+        </div>
+        <div style="max-height:380px;overflow-y:auto" id="schTable"></div>
+      </div>
+      <div class="card mb-6" id="tipsBlock"></div>
+      <div class="flex flex-wrap gap-3 justify-between items-center no-print">
+        <button class="btn btn-secondary btn-sm" onclick="go(3)"><i class="fas fa-arrow-left" style="font-size:12px"></i> Edit Details</button>
+        <div class="flex gap-3">
+          <button class="btn btn-secondary btn-sm" onclick="window.print()"><i class="fas fa-print" style="font-size:12px"></i> Print Plan</button>
+          <button class="btn btn-primary btn-sm" onclick="reset()"><i class="fas fa-redo" style="font-size:12px"></i> Start Over</button>
+        </div>
+      </div>
+
+      <footer class="text-center mt-12 mb-4">
+        <p class="text-xs" style="color:var(--muted)">DebtFree by <strong style="color:var(--fg2)">Muhammad Ekhsan Fitri bin Zamrus</strong> &middot; <a href="https://github.com/EkhsanFitri94/DebtFree" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none">View on GitHub</a> &middot; MIT License</p>
+      </footer>
+    </div>
+  </section>
+</div>
+
+<script>
+/* ================================================================
+   DebtFree — CTOS Smart Debt Settlement Planner
+   Author: Muhammad Ekhsan Fitri bin Zamrus
+   GitHub: https://github.com/EkhsanFitri94
+   License: MIT
+   ================================================================ */
+
+// ── State ──
+let step = 1, sIncomes = [], debts = [], strat = 'avalanche', chLine = null, chPie = null, res = null;
+
+// ── Helpers ──
+const $ = id => document.getElementById(id);
+const isWO = d => d.st === 'wo';
+const isFFS = d => d.st === 'ffs';
+const isTD = d => d.st === 'trade';
+const isStatic = d => isWO(d) || isFFS(d) || isTD(d);
+const fmt = n => (Math.round(n)||0).toLocaleString();
+
+function toast(m, t='ok') { const e=$('toast'); e.className=`toast ${t}`; e.innerHTML=`<i class="fas fa-${t==='ok'?'check-circle':'exclamation-circle'}"></i> ${m}`; e.classList.add('show'); setTimeout(()=>e.classList.remove('show'),3500); }
+function openReadme() { $('readmeModal').classList.add('open'); }
+function closeReadme() { $('readmeModal').classList.remove('open'); }
+ $('readmeModal').addEventListener('click', e => { if(e.target===e.currentTarget) closeReadme(); });
+
+// ── Side Income ──
+function addSI(n='',a='') { sIncomes.push({id:Date.now(),n,a}); rSI(); }
+function rmSI(id) { sIncomes=sIncomes.filter(s=>s.id!==id); rSI(); }
+function rSI() {
+  const c=$('sideIncomeList');
+  if(!sIncomes.length){c.innerHTML='<p class="text-xs" style="color:var(--muted);opacity:.35">No side income</p>';return}
+  c.innerHTML=sIncomes.map(s=>`<div class="flex gap-3 mb-3 items-center"><input type="text" class="input-field" style="flex:1;padding:10px 14px;font-size:13px" placeholder="Source" value="${s.n}" onchange="sIncomes.find(x=>x.id===${s.id}).n=this.value"><input type="number" class="input-field" style="width:130px;padding:10px 14px;font-size:13px" placeholder="RM/mo" value="${s.a}" min="0" step="50" onchange="sIncomes.find(x=>x.id===${s.id}).a=this.value"><button class="btn btn-danger btn-sm" onclick="rmSI(${s.id})"><i class="fas fa-times" style="font-size:11px"></i></button></div>`).join('');
+}
+
+// ── Debt Types ──
+const DT = [
+  {v:'active',l:'Active Loan'},{v:'wo',l:'Written-Off (W)'},
+  {v:'ffs',l:'Full & Final Settlement'},{v:'trade',l:'Trade Default'},
+  {v:'family',l:'Family/Friend'},{v:'other',l:'Other'}
+];
+
+function addDebt(n='',st='active',bal='',rate='',min='',ffa='',ffd='',lender='') {
+  debts.push({id:Date.now()+Math.random(),n,st,bal:parseFloat(bal)||0,rate:parseFloat(rate)||0,min:parseFloat(min)||0,ffa:parseFloat(ffa)||0,ffd,lender:lender||''});
+  rD();
+}
+function rmDebt(id) { debts=debts.filter(d=>d.id!==id); rD(); }
+
+function rD() {
+  const c=$('debtList');
+  if(!debts.length){c.innerHTML='<p class="py-6 text-xs text-center" style="color:var(--muted);opacity:.35">No debts. Click "Add Debt" or "Load Sample CTOS Data".</p>';return}
+  c.innerHTML=debts.map(d=>{
+    const wo=isWO(d),ff=isFFS(d),td=isTD(d),st=isStatic(d);
+    const bc=wo?'var(--danger)':ff?'var(--purple)':td?'var(--warn)':'var(--border)';
+    const ic=wo?'fa-ban':ff?'fa-file-signature':td?'fa-exclamation-circle':'fa-sync-alt';
+    const icc=wo?'var(--danger)':ff?'var(--purple)':td?'var(--warn)':'var(--accent)';
+    return `
+    <div class="d-row" style="${st?'border-left:3px solid '+bc:''}">
+      <div class="mt-1"><i class="fas ${ic}" style="color:${icc};font-size:13px"></i></div>
+      <div><input type="text" class="input-field" placeholder="Debt name" value="${d.n}" onchange="debts.find(x=>x.id===${d.id}).n=this.value" style="padding:8px 12px;font-size:13px">${d.lender?`<span class="text-xs" style="color:var(--muted)">${d.lender}</span>`:''}</div>
+      <select class="input-field" onchange="chgSt(${d.id},this.value)" style="padding:8px 12px;font-size:13px">${DT.map(t=>`<option value="${t.v}" ${d.st===t.v?'selected':''}>${t.l}</option>`).join('')}</select>
+      <input type="number" class="input-field" placeholder="0" value="${d.bal||''}" min="0" step="100" onchange="debts.find(x=>x.id===${d.id}).bal=parseFloat(this.value)||0" style="padding:8px 12px;font-size:13px">
+      <input type="number" class="input-field hide-sm" placeholder="${st?'—':'0'}" value="${st?'':d.rate||''}" min="0" step="0.1" ${st?'disabled':''} onchange="debts.find(x=>x.id===${d.id}).rate=parseFloat(this.value)||0" style="padding:8px 12px;font-size:13px">
+      <input type="number" class="input-field hide-sm" placeholder="${st?'—':'0'}" value="${st?'':d.min||''}" min="0" step="10" ${st?'disabled':''} onchange="debts.find(x=>x.id===${d.id}).min=parseFloat(this.value)||0" style="padding:8px 12px;font-size:13px">
+      <input type="number" class="input-field" placeholder="${ff?'F&F Amt':'—'}" value="${ff?(d.ffa||''):''}" min="0" step="100" ${!ff?'disabled':''} onchange="debts.find(x=>x.id===${d.id}).ffa=parseFloat(this.value)||0" style="padding:8px 12px;font-size:13px;${ff?'border-color:rgba(181,122,255,.3)':''}">
+      <button class="btn btn-danger btn-sm" onclick="rmDebt(${d.id})" style="padding:8px 10px"><i class="fas fa-trash" style="font-size:10px"></i></button>
+    </div>
+    ${ff?`<div class="alert-ffs" style="margin:0 0 8px;padding:10px 14px">
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div><label class="label" style="color:var(--purple)"><i class="fas fa-hand-holding-usd mr-1"></i>Settlement Amount (RM)</label><input type="number" class="input-field" placeholder="e.g. 8000" value="${d.ffa||''}" min="0" step="100" onchange="debts.find(x=>x.id===${d.id}).ffa=parseFloat(this.value)||0" style="border-color:rgba(181,122,255,.3)"></div>
+        <div><label class="label" style="color:var(--purple)"><i class="fas fa-clock mr-1"></i>Deadline</label><input type="date" class="input-field" value="${d.ffd}" onchange="debts.find(x=>x.id===${d.id}).ffd=this.value" style="border-color:rgba(181,122,255,.3)"></div>
+      </div>
+      ${d.ffa&&d.bal?`<div class="mt-2"><span class="badge" style="background:rgba(0,230,138,.12);color:var(--accent)"><i class="fas fa-arrow-down" style="font-size:9px"></i> ${Math.round((1-d.ffa/d.bal)*100)}% off — Save RM ${fmt(d.bal-d.ffa)}</span></div>`:''}
+    </div>`:''}
+    ${wo?`<div class="alert-wo" style="margin:0 0 8px;padding:10px 14px">
+      <div class="flex items-center gap-2 mb-1"><i class="fas fa-info-circle" style="color:var(--danger);font-size:11px"></i><span class="text-xs font-semibold" style="color:var(--danger)">Written-Off — Negotiate F&F with ${d.lender||'bank'}</span></div>
+      <p class="text-xs" style="color:var(--fg2)">RM ${fmt(d.bal)} still shows on CTOS. Call settlement department to negotiate discounted lump-sum.</p>
+      <span class="text-xs mt-1 inline-block px-2 py-1 rounded" style="background:var(--bg2);color:var(--muted)">Typical F&F: RM ${fmt(d.bal*.3)} — RM ${fmt(d.bal*.7)}</span>
+    </div>`:''}
+    ${td?`<div class="alert-trade" style="margin:0 0 8px;padding:10px 14px">
+      <div class="flex items-center gap-2 mb-1"><i class="fas fa-store" style="color:var(--warn);font-size:11px"></i><span class="text-xs font-semibold" style="color:var(--warn)">Trade Default — ${d.lender||'Creditor'}</span></div>
+      <p class="text-xs" style="color:var(--fg2)">Non-bank debt in CTOS Trade Reference. Contact creditor directly to settle and get clearance letter.</p>
+    </div>`:''}`;
+  }).join('');
+}
+
+function chgSt(id,v) { const d=debts.find(x=>x.id===id); d.st=v; if(v==='wo'||v==='trade'||v==='ffs'){d.rate=0;d.min=0} rD(); }
+
+function loadCTOS() {
+  debts=[];
+  addDebt('CIMB Personal Financing 1','wo',1100,0,0,0,'','CIMB');
+  addDebt('CIMB Personal Financing 2','wo',1000,0,0,0,'','CIMB');
+  addDebt('CIMB Personal Financing 3','wo',2000,0,0,0,'','CIMB');
+  addDebt('Coway Rental','trade',888.50,0,0,0,'','COWAY (M) SDN BHD');
+  $('salary').value='3500'; $('savings').value='1500';
+  $('cRent').value='800'; $('cUtil').value='150'; $('cFood').value='600';
+  $('cTrans').value='200'; $('cPhone').value='80'; $('cIns').value='0'; $('cOther').value='100';
+  rD(); toast('Sample CTOS data loaded — 3 Written-Off + 1 Trade Default');
+}
+
+// ── Navigation ──
+function go(s) {
+  if(s>step){if(step===1&&!(parseFloat($('salary').value)>0)){toast('Enter your monthly salary','err');return}if(step===3&&!v3())return}
+  $(`section${step}`).classList.remove('active'); step=s; $(`section${step}`).classList.add('active');
+  for(let i=1;i<=4;i++){const d=$(`dot${i}`);d.classList.remove('active','done');if(i<step)d.classList.add('done');else if(i===step)d.classList.add('active')}
+  for(let i=1;i<=3;i++)$(`rail${i}`).classList.toggle('done',i<step);
+  if(s===4)run();
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+function v3(){if(!debts.length){toast('Add at least one debt','err');return false}for(let d of debts){if(!d.n.trim()){toast('Name all debts','err');return false}if(!d.bal||d.bal<=0){toast(`Enter amount for "${d.n}"`,'err');return false}if(isFFS(d)&&(!d.ffa||d.ffa<=0)){toast(`Enter F&F amount for "${d.n}"`,'err');return false}if(isFFS(d)&&d.ffa>d.bal){toast(`F&F exceeds balance for "${d.n}"`,'err');return false}}return true}
+
+// ── Gather Data ──
+function gather() {
+  const sal=parseFloat($('salary').value)||0;
+  const side=sIncomes.reduce((s,x)=>s+(parseFloat(x.a)||0),0);
+  const sav=parseFloat($('savings').value)||0;
+  const inc=sal+side;
+  const com={r:parseFloat($('cRent').value)||0,u:parseFloat($('cUtil').value)||0,f:parseFloat($('cFood').value)||0,t:parseFloat($('cTrans').value)||0,p:parseFloat($('cPhone').value)||0,i:parseFloat($('cIns').value)||0,o:parseFloat($('cOther').value)||0};
+  const tc=Object.values(com).reduce((a,b)=>a+b,0);
+  const dl=debts.map(d=>({...d}));
+  const act=dl.filter(d=>!isStatic(d)), wo=dl.filter(isWO), ffs=dl.filter(isFFS), tr=dl.filter(isTD);
+  const td=act.reduce((s,d)=>s+d.bal,0)+ffs.reduce((s,d)=>s+d.ffa,0)+wo.reduce((s,d)=>s+d.bal,0)+tr.reduce((s,d)=>s+d.bal,0);
+  const to=dl.reduce((s,d)=>s+d.bal,0);
+  const tm=act.reduce((s,d)=>s+d.min,0);
+  return{sal,side,sav,inc,com,tc,dl,act,wo,ffs,tr,td,to,tm,avail:inc-tc};
+}
+
+// ── Engine ──
+function calc(data,st) {
+  let reg=data.act.map(d=>({...d})), ffs=data.ffs.map(d=>({...d})), tr=data.tr.map(d=>({...d})), wo=data.wo.map(d=>({...d}));
+  if(st==='avalanche')reg.sort((a,b)=>b.rate-a.rate); else if(st==='snowball')reg.sort((a,b)=>a.bal-b.bal);
+  let sched=[],rs=data.sav,mo=0,hist=[],tInt=0,set=[];
+  while(mo<600){mo++;let rec={mo,pay:[],tp:0,ti:0},bud=Math.max(data.avail,0);
+    for(let f of ffs){if(f.ffa<=0||set.includes(f.n))continue;let nd=f.ffa,pd=0;if(rs>=nd){pd=nd;rs-=nd}else{pd=rs;rs=0;const fb=Math.min(nd-pd,bud);pd+=fb;bud-=fb}if(pd>=nd){f.bal=0;f.ffa=0;set.push(f.n);rec.pay.push({n:f.n,a:nd,t:'ffs'});rec.tp+=nd}}
+    for(let t of tr){if(t.bal<=0||set.includes(t.n))continue;let nd=t.bal,pd=0;if(rs>=nd){pd=nd;rs-=nd}else{pd=rs;rs=0;const fb=Math.min(nd-pd,bud);pd+=fb;bud-=fb}if(pd>=nd){t.bal=0;set.push(t.n);rec.pay.push({n:t.n,a:nd,t:'trade'});rec.tp+=nd}}
+    for(let d of reg){if(d.bal<=0)continue;const mr=d.rate/100/12,it=d.bal*mr;d.bal+=it;tInt+=it;rec.ti+=it}
+    const cm=reg.filter(d=>d.bal>0).reduce((s,d)=>s+d.min,0);
+    if(rs>0&&bud<cm){const sf=Math.min(cm-bud,rs);bud+=sf;rs-=sf}
+    let act=reg.filter(d=>d.bal>0);
+    for(let d of act){const mp=Math.min(d.min,d.bal);d.bal-=mp;bud-=mp;rec.pay.push({n:d.n,a:mp,t:'min'});rec.tp+=mp}
+    if(bud>0){let tg=act.find(d=>d.bal>0);if(tg){const ex=Math.min(bud,tg.bal);tg.bal-=ex;rec.pay.push({n:tg.n,a:ex,t:'extra'});rec.tp+=ex}}
+    for(let d of reg)if(d.bal<=.01&&!set.includes(d.n)){d.bal=0;set.push(d.n)}
+    const all=[...ffs,...tr,...wo,...reg];
+    hist.push({mo,bal:all.map(d=>({n:d.n,b:Math.max(0,d.bal),st:d.st})),tb:all.reduce((s,d)=>s+Math.max(0,d.bal),0)});
+    sched.push(rec);if(all.every(d=>d.bal<=.01))break}
+  return{sched,hist,mo,tInt,set,rs,debts:[...ffs,...tr,...wo,...reg].map(d=>({...d,bal:Math.max(0,d.bal)})),
+    ffsSav:data.ffs.reduce((s,d)=>s+(d.bal-d.ffa),0),trTot:data.tr.reduce((s,d)=>s+d.bal,0),woTot:data.wo.reduce((s,d)=>s+d.bal,0)};
+}
+
+// ── Run ──
+function run(){const d=gather();res=calc(d,strat);rStats(d,res);rWO(d);rFFS(d,res);rTrade(d);rHealth(d);rStrat(d);rLine(res);rPie(res,d);rProg(d,res);rSch(res);rTips(d,res)}
+
+// ── Render: Stats ──
+function rStats(d,r){
+  const y=Math.floor(r.mo/12),m=r.mo%12,ts=y>0?`${y}y ${m}m`:`${m}m`;
+  let s=[
+    {i:'fa-wallet',c:'var(--accent)',bg:'var(--accent-dim)',l:'Monthly Surplus',v:`RM ${fmt(d.avail)}`},
+    {i:'fa-calendar-check',c:'var(--info)',bg:'var(--info-dim)',l:'Debt-Free In',v:ts},
+    {i:'fa-coins',c:'var(--warn)',bg:'var(--warn-dim)',l:'Interest Cost',v:`RM ${fmt(r.tInt)}`},
+    {i:'fa-layer-group',c:'var(--danger)',bg:'var(--danger-dim)',l:'Total to Settle',v:`RM ${fmt(d.td)}`},
+  ];
+  if(r.ffsSav>0)s.push({i:'fa-hand-holding-usd',c:'var(--purple)',bg:'var(--purple-dim)',l:'F&F Savings',v:`RM ${fmt(r.ffsSav)}`});
+  $('statsGrid').innerHTML=s.map(x=>`<div style="padding:16px;border-radius:12px;background:${x.bg};border:1px solid transparent"><div class="flex items-center gap-2 mb-2"><i class="fas ${x.i}" style="color:${x.c};font-size:11px"></i><span class="text-xs font-medium" style="color:${x.c}">${x.l}</span></div><div class="text-lg font-bold" style="font-family:'Space Grotesk'">${x.v}</div></div>`).join('');
+}
+
+// ── Render: WO Block ──
+function rWO(d){
+  const c=$('woBlock'),wo=d.wo;if(!wo.length){c.style.display='none';return}
+  c.style.display='block';
+  const tot=wo.reduce((s,x)=>s+x.bal,0);
+  const lenders=[...new Set(wo.map(x=>x.lender))].filter(Boolean);
+  c.innerHTML=`<div class="card" style="border-color:rgba(255,82,82,.2);background:linear-gradient(135deg,rgba(255,82,82,.03),transparent)">
+    <div class="flex items-center gap-3 mb-4"><div class="w-10 h-10 rounded-xl flex items-center justify-center" style="background:var(--danger-dim)"><i class="fas fa-ban" style="color:var(--danger);font-size:15px"></i></div>
+    <div><h3 class="font-bold text-sm" style="color:var(--danger)">Written-Off Accounts</h3><p class="text-xs" style="color:var(--muted)">RM ${fmt(tot)} total — blocks CTOS score & new credit applications</p></div></div>
+    <div class="space-y-3">${wo.map(x=>`<div class="p-3 rounded-lg" style="background:var(--bg2);border:1px solid var(--border)">
+      <div class="flex justify-between items-center mb-2"><span class="text-sm font-semibold">${x.n}</span><span class="badge" style="background:var(--danger-dim);color:var(--danger)">W — RM ${fmt(x.bal)}</span></div>
+      <div class="grid grid-cols-3 gap-2 text-xs"><div><span style="color:var(--muted)">Low F&F</span><div class="font-bold mt-1" style="color:var(--accent);font-family:'Space Grotesk'">RM ${fmt(x.bal*.3)}</div></div><div><span style="color:var(--muted)">Mid F&F</span><div class="font-bold mt-1" style="color:var(--warn);font-family:'Space Grotesk'">RM ${fmt(x.bal*.5)}</div></div><div><span style="color:var(--muted)">High F&F</span><div class="font-bold mt-1" style="color:var(--fg2);font-family:'Space Grotesk'">RM ${fmt(x.bal*.7)}</div></div></div>
+    </div>`).join('')}</div>
+    <div class="mt-4 p-3 rounded-lg" style="background:rgba(255,82,82,.05);border:1px solid rgba(255,82,82,.1)">
+      <p class="text-xs" style="color:var(--fg2)"><strong style="color:var(--danger)">Action:</strong> Call ${lenders.join(', ')||'each bank'} <strong>Settlement/Recovery Department</strong>. Ask for "full and final settlement offer." Negotiate from 30% upward. Get the offer <strong>in writing</strong> before paying any amount.</p>
+    </div></div>`;
+}
+
+// ── Render: FFS Block ──
+function rFFS(d,r){
+  const c=$('ffsBlock'),ff=d.ffs;if(!ff.length){c.style.display='none';return}
+  c.style.display='block';
+  c.innerHTML=`<div class="card" style="border-color:rgba(181,122,255,.2);background:linear-gradient(135deg,rgba(181,122,255,.03),transparent)">
+    <div class="flex items-center gap-3 mb-4"><div class="w-10 h-10 rounded-xl flex items-center justify-center" style="background:var(--purple-dim)"><i class="fas fa-file-signature" style="color:var(--purple);font-size:15px"></i></div>
+    <div><h3 class="font-bold text-sm" style="color:var(--purple)">Full & Final Settlement</h3><p class="text-xs" style="color:var(--muted)">Lump-sum payment — account closed permanently</p></div></div>
+    <div class="space-y-3">${ff.map(x=>{
+      const dp=Math.round((1-x.ffa/x.bal)*100);
+      const dl=x.ffd?new Date(x.ffd).toLocaleDateString('en-MY',{day:'numeric',month:'long',year:'numeric'}):'No deadline set';
+      const pm=r.sched.findIndex(m=>m.pay.some(p=>p.n===x.n));
+      const fund=pm===0?'Savings':`Month ${pm+1} surplus`;
+      return `<div class="p-4 rounded-lg" style="background:var(--bg2);border:1px solid var(--border)">
+        <div class="flex flex-wrap justify-between gap-2 mb-3"><span class="font-semibold text-sm">${x.n}</span><span class="badge" style="background:rgba(0,230,138,.12);color:var(--accent)"><i class="fas fa-arrow-down" style="font-size:9px"></i> ${dp}% OFF</span></div>
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm"><div><div class="text-xs" style="color:var(--muted)">Original</div><div class="font-bold line-through" style="color:var(--danger);opacity:.5;font-family:'Space Grotesk'">RM ${fmt(x.bal)}</div></div><div><div class="text-xs" style="color:var(--muted)">Settlement</div><div class="font-bold" style="color:var(--accent);font-family:'Space Grotesk'">RM ${fmt(x.ffa)}</div></div><div><div class="text-xs" style="color:var(--muted)">Deadline</div><div class="font-bold" style="font-family:'Space Grotesk';font-size:12px">${dl}</div></div><div><div class="text-xs" style="color:var(--muted)">Funded By</div><div class="font-bold" style="color:var(--info);font-family:'Space Grotesk';font-size:12px">${fund}</div></div></div>
+      </div>`}).join('')}</div></div>`;
+}
+
+// ── Render: Trade Block ──
+function rTrade(d){
+  const c=$('tradeBlock'),tr=d.tr;if(!tr.length){c.style.display='none';return}
+  c.style.display='block';
+  const tot=tr.reduce((s,x)=>s+x.bal,0);
+  c.innerHTML=`<div class="card" style="border-color:rgba(255,179,71,.2);background:linear-gradient(135deg,rgba(255,179,71,.03),transparent)">
+    <div class="flex items-center gap-3 mb-4"><div class="w-10 h-10 rounded-xl flex items-center justify-center" style="background:var(--warn-dim)"><i class="fas fa-store" style="color:var(--warn);font-size:15px"></i></div>
+    <div><h3 class="font-bold text-sm" style="color:var(--warn)">Trade Defaults</h3><p class="text-xs" style="color:var(--muted)">RM ${fmt(tot)} — non-bank creditors listed in CTOS Trade Reference</p></div></div>
+    <div class="space-y-2">${tr.map(x=>`<div class="p-3 rounded-lg" style="background:var(--bg2);border:1px solid var(--border)">
+      <div class="flex justify-between items-center"><span class="text-sm font-semibold">${x.n}</span><span class="badge" style="background:var(--warn-dim);color:var(--warn)">RM ${fmt(x.bal)}</span></div>
+      <p class="text-xs mt-1" style="color:var(--muted)">${x.lender||'Contact creditor directly'}</p>
+    </div>`).join('')}</div>
+    <div class="mt-3 p-3 rounded-lg" style="background:rgba(255,179,71,.05);border:1px solid rgba(255,179,71,.1)">
+      <p class="text-xs" style="color:var(--fg2)"><strong style="color:var(--warn)">Action:</strong> Pay the full amount and request a <strong>clearance letter</strong>. Submit it to CTOS to update your trade reference record.</p>
+    </div></div>`;
+}
+
+// ── Render: Health ──
+function rHealth(d){
+  const dti=d.inc>0?((d.tc+d.tm)/d.inc*100):0, sr=d.inc>0?(d.avail/d.inc*100):0;
+  let st,sc,sb,si,tp;
+  if(dti>80){st='Critical';sc='var(--danger)';sb='var(--danger-dim)';si='fa-exclamation-triangle';tp=['Seek AKPK counseling immediately (1-800-88-2575).','Negotiate F&F for W/O accounts — quickest path to CTOS cleanup.','Every extra ringgit of income matters.']}
+  else if(dti>60){st='Warning';sc='var(--warn)';sb='var(--warn-dim)';si='fa-exclamation-circle';tp=['Cut non-essential expenses aggressively.','Settle W/O and trade defaults first for quick CTOS improvement.','Side income dramatically shortens your timeline.'];}
+  else if(dti>40){st='Manageable';sc='var(--info)';sb='var(--info-dim)';si='fa-info-circle';tp=['Avalanche method saves most on interest.','Allocate windfalls (bonus, tax refund) directly to debt.'];}
+  else{st='Healthy';sc='var(--accent)';sb='var(--accent-dim)';si='fa-check-circle';tp=['Good position — clear debt quickly.','Split surplus between debt and emergency fund.'];}
+  $('healthBlock').innerHTML=`<div class="flex flex-col sm:flex-row gap-6">
+    <div class="flex-shrink-0 text-center"><div class="w-20 h-20 rounded-full mx-auto flex items-center justify-center mb-2" style="background:${sb}"><i class="fas ${si} text-2xl" style="color:${sc}"></i></div><div class="font-bold text-lg" style="color:${sc};font-family:'Space Grotesk'">${st}</div><div class="text-xs" style="color:var(--muted)">Financial Health</div></div>
+    <div class="flex-1"><div class="grid grid-cols-2 gap-4 mb-4">
+      <div><div class="text-xs mb-1" style="color:var(--muted)">Debt-to-Income</div><div class="font-bold" style="color:${sc};font-family:'Space Grotesk'">${dti.toFixed(1)}%</div><div class="bar-track mt-1"><div class="bar-fill" style="width:${Math.min(dti,100)}%;background:${sc}"></div></div></div>
+      <div><div class="text-xs mb-1" style="color:var(--muted)">Savings Rate</div><div class="font-bold" style="color:var(--accent);font-family:'Space Grotesk'">${sr.toFixed(1)}%</div><div class="bar-track mt-1"><div class="bar-fill" style="width:${Math.min(sr,100)}%;background:var(--accent)"></div></div></div>
+    </div>${tp.map(t=>`<div class="flex items-start gap-2 mb-2"><i class="fas fa-caret-right mt-1" style="color:${sc};font-size:12px"></i><span class="text-xs" style="color:var(--fg2)">${t}</span></div>`).join('')}</div></div>`;
+}
+
+// ── Render: Strategies ──
+function rStrat(d){
+  const ss=[{id:'avalanche',n:'Avalanche',d:'Highest interest first',i:'fa-mountain',b:'Least interest'},{id:'snowball',n:'Snowball',d:'Smallest balance first',i:'fa-snowflake',b:'Quick wins'}];
+  $('stratGrid').innerHTML=ss.map(s=>{
+    const r=calc(d,s.id),y=Math.floor(r.mo/12),m=r.mo%12;
+    return `<div class="card strat-card ${strat===s.id?'sel':''}" onclick="swStr('${s.id}')">
+      <div class="flex items-center gap-2 mb-2"><i class="fas ${s.i}" style="color:var(--accent);font-size:13px"></i><h4 class="font-semibold text-sm">${s.n}</h4></div>
+      <p class="text-xs mb-3" style="color:var(--muted)">${s.d}</p>
+      <div class="flex justify-between"><div><div class="text-xs" style="color:var(--muted)">Timeline</div><div class="font-bold text-lg" style="font-family:'Space Grotesk'">${y>0?y+'y '+m+'m':m+'m'}</div></div><div class="text-right"><div class="text-xs" style="color:var(--muted)">Interest</div><div class="font-bold" style="font-family:'Space Grotesk';color:var(--warn)">RM ${fmt(r.tInt)}</div></div></div>
+      <div class="mt-3 pt-3" style="border-top:1px solid var(--border)"><span class="text-xs" style="color:var(--accent)"><i class="fas fa-star mr-1" style="font-size:9px"></i>${s.b}</span></div></div>`}).join('');
+}
+function swStr(id){strat=id;const d=gather();res=calc(d,strat);rStats(d,res);rStrat(d);rLine(res);rPie(res,d);rProg(d,res);rSch(res);rTips(d,res)}
+
+// ── Render: Line Chart ──
+function rLine(r){
+  const ctx=$('chartLine').getContext('2d');if(chLine)chLine.destroy();
+  const h=r.hist,st=Math.max(1,Math.floor(h.length/60)),sp=h.filter((_,i)=>i%st===0||i===h.length-1);
+  const cols=['#00e68a','#3ec9f0','#ffb347','#ff5252','#b57aff','#f472b6','#34d399'];
+  const ds=r.debts.map((d,i)=>({label:d.n+(isStatic(d)?' ('+({wo:'W/O',ffs:'F&F',trade:'Trade'}[d.st])+')':''),data:sp.map(h=>{const f=h.bal.find(b=>b.n===d.n);return f?Math.max(0,f.b):0}),borderColor:cols[i%cols.length],backgroundColor:cols[i%cols.length]+'12',fill:true,tension:.4,borderWidth:isStatic(d)?2.5:1.5,borderDash:isStatic(d)?[5,3]:[],pointRadius:0,pointHitRadius:8}));
+  chLine=new Chart(ctx,{type:'line',data:{labels:sp.map(h=>`M${h.mo}`),datasets:ds},options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},plugins:{legend:{position:'bottom',labels:{color:'#5a8570',font:{size:10,family:'DM Sans'},padding:12,usePointStyle:true,pointStyleWidth:7}},tooltip:{backgroundColor:'#111c16',borderColor:'#1a2e24',borderWidth:1,titleColor:'#e4f0e8',bodyColor:'#afc8b8',callbacks:{label:c=>`${c.dataset.label}: RM ${fmt(c.parsed.y)}`}}},scales:{x:{grid:{color:'rgba(26,46,36,.25)'},ticks:{color:'#5a8570',font:{size:10},maxTicksLimit:10}},y:{grid:{color:'rgba(26,46,36,.25)'},ticks:{color:'#5a8570',font:{size:10},callback:v=>v>=1000?`${(v/1000).toFixed(0)}k`:v}}}}});
+}
+
+// ── Render: Pie Chart ──
+function rPie(r,d){
+  const ctx=$('chartPie').getContext('2d');if(chPie)chPie.destroy();
+  const fm=r.sched[0];if(!fm)return;
+  const cols=['#3ec9f0','#00e68a','#ffb347','#ff5252','#b57aff','#f472b6','#34d399'];
+  chPie=new Chart(ctx,{type:'doughnut',data:{labels:['Commitments','Debt Payments',...fm.pay.map(p=>p.n)],datasets:[{data:[d.tc,fm.tp,...fm.pay.map(()=>-1)],backgroundColor:['#3ec9f0','#00e68a',...fm.pay.map((_,i)=>cols[(i+2)%cols.length])],borderWidth:0,hoverOffset:6}]},options:{responsive:true,maintainAspectRatio:false,cutout:'62%',plugins:{legend:{position:'bottom',labels:{color:'#5a8570',font:{size:10,family:'DM Sans'},padding:10,usePointStyle:true,pointStyleWidth:7}},tooltip:{backgroundColor:'#111c16',borderColor:'#1a2e24',borderWidth:1,titleColor:'#e4f0e8',bodyColor:'#afc8b8',callbacks:{label:c=>`${c.label}: RM ${fmt(Math.abs(c.parsed))}`}}}}});
+}
+
+// ── Render: Progress ──
+function rProg(d,r){
+  const cols=['#00e68a','#3ec9f0','#ffb347','#ff5252','#b57aff','#f472b6','#34d399','#fbbf24'];
+  const stMap={active:{l:'Active',c:'var(--accent)',bg:'transparent'},wo:{l:'Written-Off',c:'var(--danger)',bg:'var(--danger-dim)'},ffs:{l:'F&F Settlement',c:'var(--purple)',bg:'var(--purple-dim)'},trade:{l:'Trade Default',c:'var(--warn)',bg:'var(--warn-dim)'},family:{l:'Family/Friend',c:'var(--info)',bg:'transparent'},other:{l:'Other',c:'var(--muted)',bg:'transparent'}};
+  $('progressBlock').innerHTML=`<h4 class="font-semibold text-sm mb-5" style="color:var(--fg2)">Individual Debt Status</h4><div class="space-y-4">${d.dl.map((x,i)=>{
+    const sm=stMap[x.st]||stMap.other,col=cols[i%cols.length];
+    let sl=r.mo;for(let h of r.hist){const b=h.bal.find(b=>b.n===x.n);if(b&&b.b<=0){sl=h.mo;break}}
+    const yy=Math.floor(sl/12),mm=sl%12,ts=yy>0?yy+'y '+mm+'m':mm+'m';
+    const pct=isFFS(x)?Math.round((1-x.ffa/x.bal)*100):0;
+    return `<div style="padding:12px;border-radius:12px;background:${sm.bg};border:1px solid ${isStatic(x)?sm.c+'18':'var(--border)'}">
+      <div class="flex items-center justify-between mb-2"><div class="flex items-center gap-2"><div class="w-3 h-3 rounded-full" style="background:${sm.c}"></div><span class="text-sm font-medium">${x.n}</span><span class="badge" style="background:${sm.c}18;color:${sm.c}">${sm.l}</span></div>
+      <div class="text-right"><span class="text-sm font-bold" style="font-family:'Space Grotesk'">RM ${fmt(isFFS(x)?x.ffa:x.bal)}</span><span class="text-xs ml-2" style="color:var(--muted)">${ts}</span></div></div>
+      <div class="bar-track" style="height:5px"><div class="bar-fill" style="width:${pct}%;background:${sm.c}"></div></div>
+      <div class="flex justify-between mt-1"><span class="text-xs" style="color:var(--muted)">${isWO(x)?'Negotiate F&F to clear':isFFS(x)?pct+'% discount':isTD(x)?'Pay lump sum':x.rate+'%/yr interest'}</span>
+      ${isWO(x)?`<span class="text-xs" style="color:var(--accent)">Suggest F&F: RM ${fmt(x.bal*.5)}</span>`:''}</div></div>`}).join('')}</div>`;
+}
+
+// ── Render: Schedule ──
+function rSch(r){
+  $('moLabel').textContent=`${r.sched.length} months`;
+  $('schTable').innerHTML=`<div class="sch-row hdr"><span>Month</span><span>Min Pay</span><span>Extra</span><span>Interest</span><span class="text-right hide-sm">Special</span></div>
+  ${r.sched.map(m=>{const dt=new Date();dt.setMonth(dt.getMonth()+m.mo-1);const ds=dt.toLocaleDateString('en-MY',{month:'short',year:'2-digit'});
+    const pr=m.pay.filter(p=>p.t==='min').reduce((s,p)=>s+p.a,0);
+    const ex=m.pay.filter(p=>p.t==='extra').reduce((s,p)=>s+p.a,0);
+    const ff=m.pay.filter(p=>p.t==='ffs').reduce((s,p)=>s+p.a,0);
+    const tr=m.pay.filter(p=>p.t==='trade').reduce((s,p)=>s+p.a,0);
+    const sp=ff>0?`<span style="color:var(--purple)"><i class="fas fa-file-signature" style="font-size:9px"></i> F&F RM ${fmt(ff)}</span>`:tr>0?`<span style="color:var(--warn)"><i class="fas fa-store" style="font-size:9px"></i> Trade RM ${fmt(tr)}</span>`:(m.pay.find(p=>p.t==='extra')||{}).n||'—';
+    return `<div class="sch-row" style="${ff||tr?'background:rgba(181,122,255,.03)':''}"><span style="color:var(--muted)">${ds}</span><span>RM ${fmt(pr)}</span><span style="color:${ex?'var(--accent)':'var(--muted)'}">${ex?'RM '+fmt(ex):'—'}</span><span style="color:var(--warn)">RM ${fmt(m.ti)}</span><span class="text-right hide-sm" style="font-size:11px">${sp}</span></div>`}).join('')}`;
+}
+
+// ── Render: Tips ──
+function rTips(d,r){
+  const{avail,inc,tc,sav,wo,ffs,tr}=d;const tips=[];
+  const woT=wo.reduce((s,x)=>s+x.bal,0),trT=tr.reduce((s,x)=>s+x.bal,0);
+
+  if(wo.length){
+    tips.push({i:'fa-phone-alt',c:'var(--danger)',bg:'var(--danger-dim)',t:'Call Banks for W/O Settlement',
+      x:`You have ${wo.length} written-off account(s) totalling RM ${fmt(woT)}. Call each bank's <strong>Settlement/Recovery Department</strong> — not general hotline. Ask for "full and final settlement offer." Note the offer amount, validity, and get it <strong>in writing</strong>.`});
+    tips.push({i:'fa-chart-line',c:'var(--danger)',bg:'var(--danger-dim)',t:'CTOS Score Recovery After W/O Settlement',
+      x:'After F&F payment, bank updates CCRIS within 1-2 billing cycles. Your CTOS score (currently 375) should improve to 400-450 within 3 months. Avoid new credit applications until score crosses 550.'});
+    tips.push({i:'fa-calculator',c:'var(--danger)',bg:'var(--danger-dim)',t:'Negotiation Strategy',
+      x:`Start by offering 30% of outstanding. Work upward. Typical settlement: ${wo.map(x=>`${x.n}: RM ${fmt(x.bal*.3)}–${fmt(x.bal*.7)}`).join(', ')}. Never accept the first offer. Ask to speak to a supervisor if needed.`});
+  }
+
+  if(tr.length){
+    tips.push({i:'fa-store',c:'var(--warn)',bg:'var(--warn-dim)',t:'Settle Trade Defaults',
+      x:`${tr.map(x=>`${x.n} (RM ${fmt(x.bal)}) via ${x.lender||'creditor'}`).join(', ')}. Pay in full and get a <strong>clearance letter</strong>. This updates CTOS Trade Reference section.`});
+  }
+
+  if(ffs.length){for(let f of ffs){if(f.ffd){const dl=new Date(f.ffd),now=new Date(),days=Math.ceil((dl-now)/864e5);
+    if(days<0)tips.push({i:'fa-exclamation-triangle',c:'var(--danger)',bg:'var(--danger-dim)',t:`F&F EXPIRED: ${f.n}`,x:`Expired ${Math.abs(days)} days ago. Contact bank for extension immediately.`});
+    else if(days<=30)tips.push({i:'fa-clock',c:'var(--warn)',bg:'var(--warn-dim)',t:`F&F Due Soon: ${f.n}`,x:`${days} days left. Use savings/emergency fund for RM ${fmt(f.ffa)}.`});
+    else tips.push({i:'fa-calendar',c:'var(--purple)',bg:'var(--purple-dim)',t:`F&F Plan: ${f.n}`,x:`Save RM ${Math.ceil(f.ffa/Math.ceil(days/30))}/month to meet deadline.`});}}
+    tips.push({i:'fa-shield-alt',c:'var(--purple)',bg:'var(--purple-dim)',t:'F&F Letter Must Include',
+      x:'Exact settlement amount, "full and final settlement" wording, account closure confirmation, and validity period. Keep this letter and payment receipt permanently.'});
+  }
+
+  if(woT+trT<=sav)tips.push({i:'fa-check-double',c:'var(--accent)',bg:'var(--accent-dim)',t:'Savings Covers All Static Debts',
+    x:`Your RM ${fmt(sav)} can clear all W/O + trade defaults (RM ${fmt(woT+trT)}). Do this FIRST — fastest path to CTOS improvement.`});
+
+  if(avail<0)tips.push({i:'fa-exclamation-triangle',c:'var(--danger)',bg:'var(--danger-dim)',t:'Negative Cash Flow',x:`Over budget by RM ${fmt(Math.abs(avail))}/month. Must increase income or cut expenses.`});
+
+  tips.push({i:'fa-university',c:'var(--info)',bg:'var(--info-dim)',t:'Free Help: AKPK',
+    x:'Agensi Kaunseling dan Pengurusan Kredit provides free debt management programs. Call 1-800-88-2575 or visit akpk.org.my.'});
+
+  tips.push({i:'fa-user-shield',c:'var(--teal)',bg:'var(--teal-dim)',t:'Your Data Privacy',
+    x:'All calculations in this tool run 100% in your browser. No data is sent to any server. Your financial information never leaves this device.'});
+
+  $('tipsBlock').innerHTML=`<h4 class="font-semibold text-sm mb-4" style="color:var(--fg2)"><i class="fas fa-lightbulb mr-2" style="color:var(--accent)"></i>CTOS Action Plan</h4>
+  <div class="space-y-3">${tips.map(t=>`<div class="flex items-start gap-3 p-4 rounded-xl" style="background:${t.bg};border:1px solid transparent">
+    <div class="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0" style="background:${t.c}18"><i class="fas ${t.i}" style="color:${t.c};font-size:12px"></i></div>
+    <div><div class="font-semibold text-xs mb-1" style="color:${t.c}">${t.t}</div><p class="text-xs" style="color:var(--fg2)">${t.x}</p></div></div>`).join('')}</div>`;
+}
+
+// ── Reset ──
+function reset(){sIncomes=[];debts=[];strat='avalanche';res=null;$('salary').value='';$('savings').value='';['cRent','cUtil','cFood','cTrans','cPhone','cIns','cOther'].forEach(i=>$(i).value='');rSI();rD();go(1);toast('Reset complete')}
+
+// ── Init ──
+addSI();addDebt('','active','','','','','','');rSI();rD();
+</script>
+</body>
+</html>
