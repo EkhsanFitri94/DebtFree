@@ -501,6 +501,8 @@ let pdfjsReady = null;
 let pendingImportRows = [], pendingImportProfile = {}, pendingImportSource = '';
 let draftSaveTimer = null;
 let planRefreshTimer = null;
+let scheduleDisplayLimit = 24;
+const SCHEDULE_CHUNK_SIZE = 24;
 
 const DRAFT_ENABLED_KEY = 'DebtFree:draftEnabled';
 const DRAFT_STATE_KEY = 'DebtFree:draftState';
@@ -1166,7 +1168,7 @@ function calc(data,st) {
 }
 
 // ── Run ──
-function run(){const d=gather();res=calc(d,strat);rStats(d,res);rWO(d);rFFS(d,res);rTrade(d);rHealth(d);rStrat(d);rLine(res);rPie(res,d);rProg(d,res);rSch(res);rTips(d,res);setTimeout(()=>{if(chLine){chLine.resize();chLine.update()}if(chPie){chPie.resize();chPie.update()}},300)}
+function run(){const d=gather();res=calc(d,strat);scheduleDisplayLimit=SCHEDULE_CHUNK_SIZE;rStats(d,res);rWO(d);rFFS(d,res);rTrade(d);rHealth(d);rStrat(d);rLine(res);rPie(res,d);rProg(d,res);rSch(res);rTips(d,res);setTimeout(()=>{if(chLine){chLine.resize();chLine.update()}if(chPie){chPie.resize();chPie.update()}},300)}
 
 // ── Render: Stats ──
 function rStats(d,r){
@@ -1275,6 +1277,14 @@ function rStrat(d){
 }
 function swStr(id){strat=id;const d=gather();res=calc(d,strat);rStats(d,res);rStrat(d);rLine(res);rPie(res,d);rProg(d,res);rSch(res);rTips(d,res);window.scrollTo({top:$('stratGrid').offsetTop-100,behavior:'smooth'})}
 
+function schView(action){
+  if(!res||!res.sched||!res.sched.length) return;
+  if(action==='more') scheduleDisplayLimit=Math.min(scheduleDisplayLimit+SCHEDULE_CHUNK_SIZE,res.sched.length);
+  if(action==='all') scheduleDisplayLimit=res.sched.length;
+  if(action==='less') scheduleDisplayLimit=SCHEDULE_CHUNK_SIZE;
+  rSch(res);
+}
+
 // ── Render: Line Chart ──
 function rLine(r){
   const ctx=$('chartLine').getContext('2d');if(chLine)chLine.destroy();
@@ -1311,15 +1321,21 @@ function rProg(d,r){
 
 // ── Render: Schedule ──
 function rSch(r){
-  $('moLabel').textContent=`${r.sched.length} months`;
+  if(!r||!r.sched){$('moLabel').textContent='0 months';$('schTable').innerHTML='';return}
+  const total=r.sched.length;
+  const shown=Math.min(scheduleDisplayLimit,total);
+  const rows=r.sched.slice(0,shown);
+  $('moLabel').textContent=`${shown}/${total} months`;
   $('schTable').innerHTML=`<div class="sch-row hdr"><span>Month</span><span>Min Pay</span><span>Extra</span><span>Interest</span><span class="text-right hide-sm">Special</span></div>
-  ${r.sched.map(m=>{const dt=new Date();dt.setMonth(dt.getMonth()+m.mo-1);const ds=dt.toLocaleDateString('en-MY',{month:'short',year:'2-digit'});
+  ${rows.map(m=>{const dt=new Date();dt.setMonth(dt.getMonth()+m.mo-1);const ds=dt.toLocaleDateString('en-MY',{month:'short',year:'2-digit'});
     const pr=m.pay.filter(p=>p.t==='min').reduce((s,p)=>s+p.a,0);
     const ex=m.pay.filter(p=>p.t==='extra').reduce((s,p)=>s+p.a,0);
     const ff=m.pay.filter(p=>p.t==='ffs').reduce((s,p)=>s+p.a,0);
     const tr=m.pay.filter(p=>p.t==='trade').reduce((s,p)=>s+p.a,0);
     const sp=ff>0?`<span style="color:var(--purple)"><i class="fas fa-file-signature" style="font-size:9px"></i> F&F RM ${fmt(ff)}</span>`:tr>0?`<span style="color:var(--warn)"><i class="fas fa-store" style="font-size:9px"></i> Trade RM ${fmt(tr)}</span>`:(m.pay.find(p=>p.t==='extra')||{}).n||'—';
-    return `<div class="sch-row" style="${ff||tr?'background:rgba(181,122,255,.03)':''}"><span style="color:var(--muted)">${ds}</span><span>RM ${fmt(pr)}</span><span style="color:${ex?'var(--accent)':'var(--muted)'}">${ex?'RM '+fmt(ex):'—'}</span><span style="color:var(--warn)">RM ${fmt(m.ti)}</span><span class="text-right hide-sm" style="font-size:11px">${sp}</span></div>`}).join('')}`;
+    return `<div class="sch-row" style="${ff||tr?'background:rgba(181,122,255,.03)':''}"><span style="color:var(--muted)">${ds}</span><span>RM ${fmt(pr)}</span><span style="color:${ex?'var(--accent)':'var(--muted)'}">${ex?'RM '+fmt(ex):'—'}</span><span style="color:var(--warn)">RM ${fmt(m.ti)}</span><span class="text-right hide-sm" style="font-size:11px">${sp}</span></div>`}).join('')}
+  ${total>shown?`<div class="pt-3" style="border-top:1px solid var(--border)"><p class="text-xs mb-2" style="color:var(--muted)">Showing ${shown} of ${total} months</p><div class="flex gap-2 flex-wrap"><button class="btn btn-secondary btn-sm" onclick="schView('more')"><i class="fas fa-plus" style="font-size:10px"></i> Show ${Math.min(SCHEDULE_CHUNK_SIZE,total-shown)} More</button><button class="btn btn-ghost btn-sm" onclick="schView('all')">Show All</button></div></div>`:''}
+  ${shown> SCHEDULE_CHUNK_SIZE?`<div class="pt-2"><button class="btn btn-ghost btn-sm" onclick="schView('less')">Show Less</button></div>`:''}`;
 }
 
 // ── Render: Tips ──
@@ -1367,7 +1383,7 @@ function rTips(d,r){
 }
 
 // ── Reset ──
-function reset(){sIncomes=[];debts=[];strat='avalanche';res=null;$('salary').value='';$('savings').value='';['cRent','cUtil','cFood','cTrans','cPhone','cIns','cOther'].forEach(i=>$(i).value='');rSI();rD();scheduleDraftSave(true);go(1);toast('Reset complete')}
+function reset(){sIncomes=[];debts=[];strat='avalanche';res=null;scheduleDisplayLimit=SCHEDULE_CHUNK_SIZE;$('salary').value='';$('savings').value='';['cRent','cUtil','cFood','cTrans','cPhone','cIns','cOther'].forEach(i=>$(i).value='');rSI();rD();scheduleDraftSave(true);go(1);toast('Reset complete')}
 
 // ── Init ──
 if(!loadDraftState()){addSI();addDebt('','active','','','','','','');rSI();rD()}
