@@ -247,6 +247,42 @@
   </div>
 </div>
 
+<!-- Import Preview Modal -->
+<div class="modal-bg" id="importPreviewModal">
+  <div class="modal-box">
+    <div class="flex items-center justify-between mb-4">
+      <div>
+        <h2 class="font-bold text-lg">Review Imported CTOS Data</h2>
+        <p class="text-xs" style="color:var(--muted)">Nothing is applied until you confirm.</p>
+      </div>
+      <button class="btn btn-ghost" onclick="closeImportPreview()" aria-label="Close"><i class="fas fa-times"></i></button>
+    </div>
+
+    <div id="importPreviewSummary" class="mb-4 text-xs" style="color:var(--fg2)"></div>
+
+    <div style="max-height:360px;overflow:auto;border:1px solid var(--border);border-radius:12px;background:var(--bg2)">
+      <table class="w-full text-xs" style="border-collapse:collapse">
+        <thead>
+          <tr style="color:var(--muted);border-bottom:1px solid var(--border)">
+            <th class="text-left p-3">Name</th>
+            <th class="text-left p-3">Status</th>
+            <th class="text-right p-3">Outstanding</th>
+            <th class="text-right p-3">Rate %</th>
+            <th class="text-right p-3">Min Pay</th>
+            <th class="text-right p-3">F&F</th>
+          </tr>
+        </thead>
+        <tbody id="importPreviewTable"></tbody>
+      </table>
+    </div>
+
+    <div class="flex justify-end gap-3 mt-5 no-print">
+      <button class="btn btn-secondary btn-sm" onclick="closeImportPreview()">Cancel</button>
+      <button class="btn btn-primary btn-sm" onclick="confirmImportPreview()"><i class="fas fa-check" style="font-size:11px"></i> Apply Imported Data</button>
+    </div>
+  </div>
+</div>
+
 <div class="relative z-10 max-w-6xl mx-auto px-4 py-8">
 
   <!-- Header -->
@@ -431,6 +467,7 @@
 // ── State ──
 let step = 1, sIncomes = [], debts = [], strat = 'avalanche', chLine = null, chPie = null, res = null;
 let pdfjsReady = null;
+let pendingImportPayload = null, pendingImportSource = '';
 
 // ── Helpers ──
 const $ = id => document.getElementById(id);
@@ -444,6 +481,7 @@ function toast(m, t='ok') { const e=$('toast'); e.className=`toast ${t}`; e.inne
 function openReadme() { $('readmeModal').classList.add('open'); }
 function closeReadme() { $('readmeModal').classList.remove('open'); }
  $('readmeModal').addEventListener('click', e => { if(e.target===e.currentTarget) closeReadme(); });
+ $('importPreviewModal').addEventListener('click', e => { if(e.target===e.currentTarget) closeImportPreview(); });
 
 // ── Side Income ──
 function addSI(n='',a='') { sIncomes.push({id:Date.now(),n,a}); rSI(); }
@@ -707,39 +745,10 @@ function parseCTOSCsv(text) {
   return profile?{profile,debts}:{debts};
 }
 
-function handleCTOSUpload(e) {
-  const file=e.target.files&&e.target.files[0];
-  if(!file) return;
-  const isCsv=(file.name||'').toLowerCase().endsWith('.csv')||String(file.type||'').toLowerCase().includes('csv');
-  const isPdf=(file.name||'').toLowerCase().endsWith('.pdf')||String(file.type||'').toLowerCase().includes('pdf');
-  const reader=new FileReader();
-  reader.onload=async ()=>{
-    try {
-      let parsed;
-      if (isPdf) {
-        parsed = await parseCTOSPdf(reader.result);
-      } else {
-        const raw=String(reader.result||'').trim();
-        if(!raw) throw new Error('Selected file is empty');
-        parsed=isCsv?parseCTOSCsv(raw):JSON.parse(raw);
-      }
-      applyCTOSData(parsed);
-      toast(`CTOS data uploaded from ${file.name}`);
-    } catch (err) {
-      toast(err.message||'Failed to upload CTOS data. Use valid PDF, JSON, or CSV format.','err');
-    } finally {
-      e.target.value='';
-    }
-  };
-  reader.onerror=()=>{toast('Unable to read selected file','err');e.target.value='';};
-  if (isPdf) reader.readAsArrayBuffer(file);
-  else reader.readAsText(file);
-}
-
-function applyCTOSData(payload) {
+function normalizeImportedPayload(payload) {
   const root=Array.isArray(payload)?{debts:payload}:payload;
   const items=root.debts||root.records||root.items;
-  if(!Array.isArray(items)) throw new Error('JSON must include an array in debts, records, or items');
+  if(!Array.isArray(items)) throw new Error('Import data must include an array in debts, records, or items');
 
   const imported=[];
   for(const row of items){
@@ -757,10 +766,86 @@ function applyCTOSData(payload) {
   }
 
   if(!imported.length) throw new Error('No valid debt records found. Include at least name and outstanding amount.');
+  return { imported, profile: root.profile||{} };
+}
+
+function openImportPreview(payload, sourceName='selected file') {
+  const normalized=normalizeImportedPayload(payload);
+  const rows=normalized.imported;
+  const total=rows.reduce((s,x)=>s+x.bal,0);
+  pendingImportPayload=payload;
+  pendingImportSource=sourceName;
+
+  $('importPreviewSummary').innerHTML=`<div class="flex flex-wrap gap-2">
+    <span class="badge" style="background:var(--accent-dim);color:var(--accent)">${rows.length} debt rows detected</span>
+    <span class="badge" style="background:var(--info-dim);color:var(--info)">Total RM ${fmt(total)}</span>
+    <span class="badge" style="background:var(--warn-dim);color:var(--warn)">${sourceName}</span>
+  </div><p class="mt-2" style="color:var(--muted)">Check status mapping and amounts before applying.</p>`;
+
+  $('importPreviewTable').innerHTML=rows.slice(0,100).map(x=>`<tr style="border-bottom:1px solid rgba(26,46,36,.5)">
+    <td class="p-3">${x.n}</td>
+    <td class="p-3">${x.st}</td>
+    <td class="p-3 text-right">RM ${fmt(x.bal)}</td>
+    <td class="p-3 text-right">${x.rate?x.rate.toFixed(2):'0.00'}</td>
+    <td class="p-3 text-right">RM ${fmt(x.min)}</td>
+    <td class="p-3 text-right">RM ${fmt(x.ffa)}</td>
+  </tr>`).join('');
+
+  if(rows.length>100){
+    $('importPreviewTable').innerHTML += `<tr><td colspan="6" class="p-3" style="color:var(--muted)">Showing first 100 rows only.</td></tr>`;
+  }
+  $('importPreviewModal').classList.add('open');
+}
+
+function closeImportPreview() {
+  $('importPreviewModal').classList.remove('open');
+  pendingImportPayload=null;
+  pendingImportSource='';
+}
+
+function confirmImportPreview() {
+  if(!pendingImportPayload){toast('No import data to apply','err');return}
+  const sourceName=pendingImportSource||'selected file';
+  applyCTOSData(pendingImportPayload);
+  closeImportPreview();
+  toast(`CTOS data imported from ${sourceName}`);
+}
+
+function handleCTOSUpload(e) {
+  const file=e.target.files&&e.target.files[0];
+  if(!file) return;
+  const isCsv=(file.name||'').toLowerCase().endsWith('.csv')||String(file.type||'').toLowerCase().includes('csv');
+  const isPdf=(file.name||'').toLowerCase().endsWith('.pdf')||String(file.type||'').toLowerCase().includes('pdf');
+  const reader=new FileReader();
+  reader.onload=async ()=>{
+    try {
+      let parsed;
+      if (isPdf) {
+        parsed = await parseCTOSPdf(reader.result);
+      } else {
+        const raw=String(reader.result||'').trim();
+        if(!raw) throw new Error('Selected file is empty');
+        parsed=isCsv?parseCTOSCsv(raw):JSON.parse(raw);
+      }
+      openImportPreview(parsed,file.name||'selected file');
+    } catch (err) {
+      toast(err.message||'Failed to upload CTOS data. Use valid PDF, JSON, or CSV format.','err');
+    } finally {
+      e.target.value='';
+    }
+  };
+  reader.onerror=()=>{toast('Unable to read selected file','err');e.target.value='';};
+  if (isPdf) reader.readAsArrayBuffer(file);
+  else reader.readAsText(file);
+}
+
+function applyCTOSData(payload) {
+  const normalized=normalizeImportedPayload(payload);
+  const imported=normalized.imported;
   debts=imported;
   rD();
 
-  const profile=root.profile||{};
+  const profile=normalized.profile||{};
   const commitments=profile.commitments||{};
   const fields={
     salary:profile.salary,
