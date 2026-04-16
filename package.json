@@ -1,0 +1,13 @@
+{
+  "name": "debtfree",
+  "version": "1.0.0",
+  "description": "CTOS Smart Debt Settlement Planner",
+  "scripts": {
+    "start": "serve ."
+  },
+  "author": "Muhammad Ekhsan Fitri bin Zamrus",
+  "license": "MIT",
+  "devDependencies": {
+    "serve": "14.2.6"
+  }
+}
