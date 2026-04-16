@@ -458,6 +458,7 @@
       <div id="ffsBlock" class="mb-6" style="display:none"></div>
       <div id="tradeBlock" class="mb-6" style="display:none"></div>
       <div class="card mb-6" id="healthBlock"></div>
+      <div class="card mb-6" id="surplusPlanBlock"></div>
       <div class="mb-6"><h3 class="text-base font-bold mb-3">Strategy for Active Loans</h3><div class="grid grid-cols-1 md:grid-cols-2 gap-4" id="stratGrid"></div></div>
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-6">
         <div class="card"><h4 class="font-semibold text-sm mb-4" style="color:var(--fg2)">Payoff Timeline</h4><canvas id="chartLine" height="260"></canvas></div>
@@ -1168,7 +1169,7 @@ function calc(data,st) {
 }
 
 // ── Run ──
-function run(){const d=gather();res=calc(d,strat);scheduleDisplayLimit=SCHEDULE_CHUNK_SIZE;rStats(d,res);rWO(d);rFFS(d,res);rTrade(d);rHealth(d);rStrat(d);rLine(res);rPie(res,d);rProg(d,res);rSch(res);rTips(d,res);setTimeout(()=>{if(chLine){chLine.resize();chLine.update()}if(chPie){chPie.resize();chPie.update()}},300)}
+function run(){const d=gather();res=calc(d,strat);scheduleDisplayLimit=SCHEDULE_CHUNK_SIZE;rStats(d,res);rWO(d);rFFS(d,res);rTrade(d);rHealth(d);rSurplus(d,res);rStrat(d);rLine(res);rPie(res,d);rProg(d,res);rSch(res);rTips(d,res);setTimeout(()=>{if(chLine){chLine.resize();chLine.update()}if(chPie){chPie.resize();chPie.update()}},300)}
 
 // ── Render: Stats ──
 function rStats(d,r){
@@ -1264,6 +1265,66 @@ function rHealth(d){
     </div>${tp.map(t=>`<div class="flex items-start gap-2 mb-2"><i class="fas fa-caret-right mt-1" style="color:${sc};font-size:12px"></i><span class="text-xs" style="color:var(--fg2)">${t}</span></div>`).join('')}</div></div>`;
 }
 
+// ── Render: Surplus Plan ──
+function rSurplus(d,r){
+  const c=$('surplusPlanBlock');
+  const avail=Math.max(0,d.avail);
+  const emergencyTarget=d.tc*6;
+  const emergencyGap=Math.max(0,emergencyTarget-d.sav);
+  const hasActive=d.act&&d.act.length>0;
+
+  if(avail<=0){
+    c.innerHTML=`<h4 class="font-semibold text-sm mb-3" style="color:var(--fg2)"><i class="fas fa-piggy-bank mr-2" style="color:var(--warn)"></i>Surplus Saving & Investment Plan</h4>
+    <div class="p-4 rounded-xl" style="background:var(--warn-dim);border:1px solid rgba(255,179,71,.2)">
+      <p class="text-sm font-semibold mb-1" style="color:var(--warn)">No investable surplus yet</p>
+      <p class="text-xs" style="color:var(--fg2)">Current monthly surplus is RM 0. Focus on expense cuts and/or side income first. Once surplus turns positive, this section will auto-generate a monthly split plan.</p>
+    </div>`;
+    return;
+  }
+
+  const pct={
+    buf:emergencyGap>0?0.5:0.2,
+    debt:hasActive?(emergencyGap>0?0.35:0.3):(emergencyGap>0?0.1:0.1),
+    inv:hasActive?(emergencyGap>0?0.15:0.5):(emergencyGap>0?0.4:0.7)
+  };
+
+  const bufAmt=Math.round(avail*pct.buf);
+  const debtAmt=Math.round(avail*pct.debt);
+  const invAmt=Math.max(0,Math.round(avail)-bufAmt-debtAmt);
+  const monthsToBuffer=bufAmt>0?Math.ceil(emergencyGap/bufAmt):0;
+
+  let debtFocus='Top active loan by interest (avalanche).';
+  if(hasActive){
+    const sorted=[...d.act].sort((a,b)=>(b.rate||0)-(a.rate||0));
+    if(sorted[0]) debtFocus=`Top active loan: ${sorted[0].n} (${sorted[0].rate||0}%/yr).`;
+  } else {
+    debtFocus='No active loan detected, keep only a small debt bucket for ad-hoc settlements.';
+  }
+
+  c.innerHTML=`<h4 class="font-semibold text-sm mb-3" style="color:var(--fg2)"><i class="fas fa-piggy-bank mr-2" style="color:var(--accent)"></i>Surplus Saving & Investment Plan</h4>
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+    <div class="p-3 rounded-xl" style="background:var(--accent-dim);border:1px solid rgba(0,230,138,.2)">
+      <div class="text-xs" style="color:var(--muted)">Safety Buffer (${Math.round(pct.buf*100)}%)</div>
+      <div class="text-lg font-bold" style="font-family:'Space Grotesk';color:var(--accent)">RM ${fmt(bufAmt)}/mo</div>
+      <p class="text-xs mt-1" style="color:var(--fg2)">Put into separate high-liquidity account.</p>
+    </div>
+    <div class="p-3 rounded-xl" style="background:var(--info-dim);border:1px solid rgba(62,201,240,.2)">
+      <div class="text-xs" style="color:var(--muted)">Debt Accelerator (${Math.round(pct.debt*100)}%)</div>
+      <div class="text-lg font-bold" style="font-family:'Space Grotesk';color:var(--info)">RM ${fmt(debtAmt)}/mo</div>
+      <p class="text-xs mt-1" style="color:var(--fg2)">${debtFocus}</p>
+    </div>
+    <div class="p-3 rounded-xl" style="background:var(--purple-dim);border:1px solid rgba(181,122,255,.2)">
+      <div class="text-xs" style="color:var(--muted)">Investment Bucket (${Math.round(pct.inv*100)}%)</div>
+      <div class="text-lg font-bold" style="font-family:'Space Grotesk';color:var(--purple)">RM ${fmt(invAmt)}/mo</div>
+      <p class="text-xs mt-1" style="color:var(--fg2)">Start with diversified low-cost funds or money-market mix.</p>
+    </div>
+  </div>
+  <div class="p-3 rounded-xl" style="background:var(--card2);border:1px solid var(--border)">
+    <p class="text-xs mb-2" style="color:var(--fg2)"><strong style="color:var(--accent)">Where to separate money each payday:</strong> 1) Bills account 2) Safety buffer account 3) Debt accelerator wallet 4) Investment account.</p>
+    <p class="text-xs" style="color:var(--muted)">Emergency target: RM ${fmt(emergencyTarget)} (${monthsToBuffer?`about ${monthsToBuffer} month(s) to fill remaining RM ${fmt(emergencyGap)}`:'buffer target reached'}). Estimated plan interest: RM ${fmt(r.tInt)}.</p>
+  </div>`;
+}
+
 // ── Render: Strategies ──
 function rStrat(d){
   const ss=[{id:'avalanche',n:'Avalanche',d:'Highest interest first',i:'fa-mountain',b:'Least interest'},{id:'snowball',n:'Snowball',d:'Smallest balance first',i:'fa-snowflake',b:'Quick wins'}];
@@ -1275,7 +1336,7 @@ function rStrat(d){
       <div class="flex justify-between"><div><div class="text-xs" style="color:var(--muted)">Timeline</div><div class="font-bold text-lg" style="font-family:'Space Grotesk'">${y>0?y+'y '+m+'m':m+'m'}</div></div><div class="text-right"><div class="text-xs" style="color:var(--muted)">Interest</div><div class="font-bold" style="font-family:'Space Grotesk';color:var(--warn)">RM ${fmt(r.tInt)}</div></div></div>
       <div class="mt-3 pt-3" style="border-top:1px solid var(--border)"><span class="text-xs" style="color:var(--accent)"><i class="fas fa-star mr-1" style="font-size:9px"></i>${s.b}</span></div></div>`}).join('');
 }
-function swStr(id){strat=id;const d=gather();res=calc(d,strat);rStats(d,res);rStrat(d);rLine(res);rPie(res,d);rProg(d,res);rSch(res);rTips(d,res);window.scrollTo({top:$('stratGrid').offsetTop-100,behavior:'smooth'})}
+function swStr(id){strat=id;const d=gather();res=calc(d,strat);rStats(d,res);rStrat(d);rSurplus(d,res);rLine(res);rPie(res,d);rProg(d,res);rSch(res);rTips(d,res);window.scrollTo({top:$('stratGrid').offsetTop-100,behavior:'smooth'})}
 
 function schView(action){
   if(!res||!res.sched||!res.sched.length) return;
