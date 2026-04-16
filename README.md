@@ -28,6 +28,8 @@ If you need to wipe imported debt/profile values quickly, use the Clear Imported
 
 Optional: enable Remember this device if you want the app to keep your draft locally in your browser. It stays off unless you turn it on.
 
+You can also export a private backup JSON file and import it on another device. This does not require local storage.
+
 Supported top-level formats:
 
 - An array of debt objects

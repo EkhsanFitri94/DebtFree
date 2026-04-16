@@ -418,7 +418,10 @@
           <button class="btn btn-secondary btn-sm" onclick="addDebt()"><i class="fas fa-plus" style="font-size:11px"></i> Add Debt</button>
           <button class="btn btn-secondary btn-sm" onclick="openCTOSUpload()" style="border-color:rgba(181,122,255,.3);color:var(--purple)"><i class="fas fa-file-upload" style="font-size:11px"></i> Upload CTOS Data</button>
           <button class="btn btn-danger btn-sm" onclick="clearImportedData()"><i class="fas fa-broom" style="font-size:11px"></i> Clear Imported Data</button>
+          <button class="btn btn-secondary btn-sm" onclick="exportDraftBackup()" style="border-color:rgba(62,201,240,.3);color:var(--info)"><i class="fas fa-file-export" style="font-size:11px"></i> Export Backup</button>
+          <button class="btn btn-secondary btn-sm" onclick="openBackupImport()" style="border-color:rgba(45,212,191,.3);color:var(--teal)"><i class="fas fa-file-import" style="font-size:11px"></i> Import Backup</button>
           <input type="file" id="ctosFileInput" accept=".pdf,.json,.csv,application/pdf,application/json,text/csv" style="display:none" onchange="handleCTOSUpload(event)">
+          <input type="file" id="backupFileInput" accept=".json,application/json" style="display:none" onchange="handleBackupImport(event)">
         </div>
       </div>
 
@@ -673,6 +676,55 @@ function scheduleDraftSave(immediate = false) {
     return;
   }
   draftSaveTimer = setTimeout(saveDraftState, 150);
+}
+
+function exportDraftBackup() {
+  const backup = {
+    version: 1,
+    app: 'DebtFree',
+    createdAt: new Date().toISOString(),
+    data: serializeDraftState()
+  };
+  const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `DebtFree-backup-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+  toast('Backup file exported');
+}
+
+function openBackupImport() { $('backupFileInput').click(); }
+
+function handleBackupImport(e) {
+  const file = e.target.files && e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const raw = String(reader.result || '').trim();
+      if (!raw) throw new Error('Selected backup file is empty');
+      const parsed = JSON.parse(raw);
+      const state = parsed && parsed.data ? parsed.data : parsed;
+      if (!state || typeof state !== 'object') throw new Error('Invalid backup file format');
+      const ok = confirm('Load this backup into the current form? This will replace the current draft values on this device.');
+      if (!ok) return;
+      applyDraftState(state);
+      rSI();
+      rD();
+      scheduleDraftSave(true);
+      toast('Backup restored into the current form');
+    } catch (err) {
+      toast(err.message || 'Failed to import backup file', 'err');
+    } finally {
+      e.target.value = '';
+    }
+  };
+  reader.onerror = () => { toast('Unable to read backup file', 'err'); e.target.value = ''; };
+  reader.readAsText(file);
 }
 
 function openCTOSUpload() { $('ctosFileInput').click(); }
