@@ -188,11 +188,13 @@
         <ul class="space-y-1 ml-4" style="list-style:disc">
           <li>4-step wizard: Income → Commitments → Debts → Plan</li>
           <li>CTOS-specific debt statuses: Active, Written-Off, F&F, Trade Default</li>
-          <li>Private CTOS PDF/JSON/CSV upload from your local device</li>
+          <li>Private CTOS PDF upload from your local device</li>
           <li>Avalanche vs Snowball strategy comparison</li>
           <li>Month-by-month payment schedule with interest tracking</li>
+          <li>Live auto-refresh when you edit your data in the results screen</li>
           <li>Interactive charts: payoff timeline & payment breakdown</li>
           <li>Financial health check with debt-to-income ratio</li>
+          <li>Age-at-settlement preview using your optional date of birth</li>
           <li>CTOS score recovery guidance and AKPK referral</li>
           <li>F&F negotiation range calculator (30-70%)</li>
           <li>Print-ready report output</li>
@@ -224,9 +226,9 @@
         <ol class="space-y-1 ml-4" style="list-style:decimal">
           <li>Open <code style="background:var(--bg2);padding:2px 6px;border-radius:4px;font-size:12px">index.html</code> in any modern browser</li>
           <li>Enter your income details and monthly commitments</li>
-          <li>Upload your CTOS data (PDF, JSON, or CSV) from your local device, or add debts manually</li>
+          <li>Upload your CTOS PDF from your local device, or add debts manually</li>
           <li>Click "Generate Plan" to get your personalized roadmap</li>
-          <li>Compare strategies, review the schedule, and follow the action plan</li>
+          <li>Compare strategies, review the schedule, and let the plan update automatically when you edit it</li>
         </ol>
       </div>
 
@@ -507,6 +509,7 @@ let step = 1, sIncomes = [], debts = [], strat = 'avalanche', chLine = null, chP
 let pdfjsReady = null;
 let pendingImportRows = [], pendingImportProfile = {}, pendingImportSource = '';
 let draftSaveTimer = null;
+let planRefreshTimer = null;
 
 const DRAFT_ENABLED_KEY = 'DebtFree:draftEnabled';
 const DRAFT_STATE_KEY = 'DebtFree:draftState';
@@ -525,12 +528,23 @@ function openReadme() { $('readmeModal').classList.add('open'); }
 function closeReadme() { $('readmeModal').classList.remove('open'); }
  $('readmeModal').addEventListener('click', e => { if(e.target===e.currentTarget) closeReadme(); });
  $('importPreviewModal').addEventListener('click', e => { if(e.target===e.currentTarget) closeImportPreview(); });
- document.addEventListener('input', scheduleDraftSave);
- document.addEventListener('change', scheduleDraftSave);
+function schedulePlanRefresh(immediate = false) {
+  if (step !== 4) return;
+  if (planRefreshTimer) clearTimeout(planRefreshTimer);
+  if (immediate) {
+    run();
+    return;
+  }
+  planRefreshTimer = setTimeout(() => {
+    if (step === 4) run();
+  }, 220);
+}
+ document.addEventListener('input', () => { scheduleDraftSave(); schedulePlanRefresh(); });
+ document.addEventListener('change', () => { scheduleDraftSave(); schedulePlanRefresh(); });
 
 // ── Side Income ──
 function addSI(n='',a='') { sIncomes.push({id:Date.now(),n,a}); rSI(); scheduleDraftSave(); }
-function rmSI(id) { sIncomes=sIncomes.filter(s=>s.id!==id); rSI(); scheduleDraftSave(); }
+function rmSI(id) { sIncomes=sIncomes.filter(s=>s.id!==id); rSI(); scheduleDraftSave(); schedulePlanRefresh(); }
 function rSI() {
   const c=$('sideIncomeList');
   if(!sIncomes.length){c.innerHTML='<p class="text-xs" style="color:var(--muted);opacity:.35">No side income</p>';return}
@@ -548,8 +562,9 @@ function addDebt(n='',st='active',bal='',rate='',min='',ffa='',ffd='',lender='')
   debts.push({id:Date.now()+Math.random(),n,st,bal:parseFloat(bal)||0,rate:parseFloat(rate)||0,min:parseFloat(min)||0,ffa:parseFloat(ffa)||0,ffd,lender:lender||''});
   rD();
   scheduleDraftSave();
+  schedulePlanRefresh();
 }
-function rmDebt(id) { debts=debts.filter(d=>d.id!==id); rD(); scheduleDraftSave(); }
+function rmDebt(id) { debts=debts.filter(d=>d.id!==id); rD(); scheduleDraftSave(); schedulePlanRefresh(); }
 
 function rD() {
   const c=$('debtList');
@@ -589,7 +604,7 @@ function rD() {
   }).join('');
 }
 
-function chgSt(id,v) { const d=debts.find(x=>x.id===id); d.st=v; if(v==='wo'||v==='trade'||v==='ffs'){d.rate=0;d.min=0} rD(); scheduleDraftSave(); }
+function chgSt(id,v) { const d=debts.find(x=>x.id===id); d.st=v; if(v==='wo'||v==='trade'||v==='ffs'){d.rate=0;d.min=0} rD(); scheduleDraftSave(); schedulePlanRefresh(); }
 
 function toNum(v) { const n=parseFloat(v); return Number.isFinite(n)?n:0; }
 function normSt(v) {
@@ -1107,6 +1122,7 @@ function applyCTOSData(payload) {
   };
   Object.keys(fields).forEach(k=>{ if(fields[k]!==undefined&&fields[k]!==null) $(k).value=toNum(fields[k])||''; });
   scheduleDraftSave(true);
+  schedulePlanRefresh(true);
 }
 
 // ── Navigation ──

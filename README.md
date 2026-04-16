@@ -12,7 +12,9 @@ No backend is required. All processing stays inside your browser.
 
 - Income, commitments, debt wizard
 - CTOS-oriented debt status handling
-- Private local CTOS JSON upload (manual file selection)
+- Private local CTOS PDF upload (manual file selection)
+- Live auto-refresh on the results screen when you edit data
+- Optional age-at-settlement preview using date of birth
 - Avalanche and snowball strategy comparison
 - Interactive Chart.js timeline and payment breakdown
 - Print-ready report
@@ -20,7 +22,7 @@ No backend is required. All processing stays inside your browser.
 
 ## Upload CTOS Data (Private)
 
-Use the Upload CTOS Data button in Step 3 and choose a local PDF, JSON, or CSV file.
+Use the Upload CTOS Data button in Step 3 and choose a local CTOS PDF file.
 
 After parsing, DebtFree shows an import preview first. You can edit status/amount fields or remove rows, and data is only applied after you click Apply Imported Data.
 
@@ -30,12 +32,11 @@ Optional: enable Remember this device if you want the app to keep your draft loc
 
 You can also export a private backup JSON file and import it on another device. This does not require local storage.
 
-Supported top-level formats:
+Supported input:
 
-- An array of debt objects
-- Or an object with `debts` plus optional `profile`
-- Or CSV with a header row
-- Or CTOS PDF (heuristic text extraction)
+- CTOS PDF (heuristic text extraction)
+
+For portable JSON backup and restore, use the Export Backup and Import Backup buttons instead.
 
 Example:
 
@@ -81,33 +82,10 @@ Example:
 
 Status values accepted: `active`, `written-off` (or `wo`), `ffs`, `trade`, `family`, `other`.
 
-CSV columns supported (case-insensitive):
-
-- `name` or `debtName` or `account`
-- `status`
-- `outstanding` or `balance`
-- `interestRate`, `minPayment` (for active debts)
-- `ffAmount`, `ffDeadline` (for F&F debts)
-- `lender` or `creditor`
-
-Optional profile columns in CSV (read from first valid row):
-
-- `salary`, `savings`
-- `rent`, `utilities`, `food`, `transportation`, `phone`, `insurance`, `other`
-
-Minimal CSV example:
-
-```csv
-name,status,outstanding,interestRate,minPayment,lender
-CIMB Personal Financing 1,written-off,1100,0,0,CIMB
-Car Loan,active,22000,4.2,540,Maybank
-Old Card Account,ffs,9000,0,0,Public Bank
-```
-
 PDF notes:
 
 - PDF parsing runs fully in your browser and does not upload your file.
-- CTOS PDFs can vary in layout. If extracted rows are incomplete, use CSV or JSON for full control and accuracy.
+- CTOS PDFs can vary in layout. If extracted rows are incomplete, edit the preview rows before applying them.
 - The PDF parser is tuned for common labels such as Written-Off, F&F/Settlement, Trade Default, Active, Current, and Good Standing.
 
 ## Author
