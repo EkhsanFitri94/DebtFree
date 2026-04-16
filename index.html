@@ -757,10 +757,10 @@ async function ensurePdfJs() {
 
 function detectStatusFromText(line) {
   const s = String(line || '').toLowerCase();
-  if (/written\s*-?\s*off|\bw\/o\b|write\s*-?\s*off/.test(s)) return 'wo';
-  if (/full\s*&?\s*final|\bffs\b|settlement/.test(s)) return 'ffs';
-  if (/trade\s*default|trade\s*reference|trade/.test(s)) return 'trade';
-  if (/active|performing|current|loan/.test(s)) return 'active';
+  if (/written\s*-?\s*off|\bw\/o\b|write\s*-?\s*off|arrears\s*written\s*off/.test(s)) return 'wo';
+  if (/full\s*&?\s*final|\bffs\b|settlement|settled\s*account|closed\s*settlement/.test(s)) return 'ffs';
+  if (/trade\s*default|trade\s*reference|non-?bank|supplier|service provider/.test(s)) return 'trade';
+  if (/active|performing|current|loan|good\s*standing|regular|open\s*account/.test(s)) return 'active';
   return null;
 }
 
@@ -785,9 +785,25 @@ function cleanDebtName(line) {
 
 function parseCTOSPdfText(text) {
   const lines = String(text || '').split(/\r?\n/).map(x => x.trim()).filter(Boolean);
-  const ignored = /^(page\s*\d+|statement|report\s*date|ctos|ccris|name\s*:|ic\s*:|account\s*summary)$/i;
+  const ignored = /^(page\s*\d+|statement|report\s*date|ctos|ccris|name\s*:|ic\s*:|account\s*summary|summary|balance\s*as\s*at)$/i;
   let statusCtx = 'active';
   const rows = [];
+
+  const statusKeywords = ['written-off', 'w/o', 'full final', 'ffs', 'trade default', 'active', 'performing', 'current'];
+
+  function makeCandidate(sourceLine, fallbackLine, sourceIndex) {
+    const merged = [sourceLine, fallbackLine].filter(Boolean).join(' ').trim();
+    const amts = extractAmounts(merged);
+    if (!amts.length) return null;
+
+    const detected = detectStatusFromText(merged) || detectStatusFromText(sourceLine) || detectStatusFromText(fallbackLine) || statusCtx || 'active';
+    let name = cleanDebtName(merged);
+    if (!name || name.length < 3) return null;
+    if (statusKeywords.some(k => merged.toLowerCase().includes(k))) {
+      name = name.replace(/\b(\d{2,})\b/g, ' ').replace(/\s+/g, ' ').trim();
+    }
+    return { name, status: detected, outstanding: amts[amts.length - 1], sourceIndex };
+  }
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
@@ -795,19 +811,19 @@ function parseCTOSPdfText(text) {
     if (detected) statusCtx = detected;
     if (ignored.test(line)) continue;
 
-    const amts = extractAmounts(line);
-    if (!amts.length) continue;
+    const prev = lines[i - 1] || '';
+    const next = lines[i + 1] || '';
 
-    let name = cleanDebtName(line);
-    if (!name || name.length < 3) {
-      const prev = lines[i - 1] || '';
-      name = cleanDebtName(prev);
+    const currentCandidate = makeCandidate(line, '', i);
+    if (currentCandidate) rows.push(currentCandidate);
+
+    if (!currentCandidate || currentCandidate.outstanding < 100 || currentCandidate.name.length < 5) {
+      const prevCandidate = makeCandidate(prev, line, i - 1);
+      if (prevCandidate) rows.push(prevCandidate);
+
+      const nextCandidate = makeCandidate(line, next, i);
+      if (nextCandidate) rows.push(nextCandidate);
     }
-    if (!name || name.length < 3) continue;
-
-    const status = detected || detectStatusFromText(lines[i - 1]) || statusCtx || 'active';
-    const outstanding = amts[amts.length - 1];
-    rows.push({ name, status, outstanding });
   }
 
   const seen = new Set();
@@ -816,6 +832,7 @@ function parseCTOSPdfText(text) {
     const key = `${r.name}|${r.status}|${Math.round(r.outstanding * 100)}`;
     if (seen.has(key)) continue;
     seen.add(key);
+    if (/^(rm|myr|amount|balance|outstanding|current balance)$/i.test(r.name)) continue;
     deduped.push(r);
   }
   if (!deduped.length) throw new Error('Could not detect debt rows from this PDF. Try JSON or CSV upload for better accuracy.');

@@ -108,6 +108,7 @@ PDF notes:
 
 - PDF parsing runs fully in your browser and does not upload your file.
 - CTOS PDFs can vary in layout. If extracted rows are incomplete, use CSV or JSON for full control and accuracy.
+- The PDF parser is tuned for common labels such as Written-Off, F&F/Settlement, Trade Default, Active, Current, and Good Standing.
 
 ## Author
 
