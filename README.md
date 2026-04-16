@@ -20,13 +20,14 @@ No backend is required. All processing stays inside your browser.
 
 ## Upload CTOS Data (Private)
 
-Use the `Upload CTOS Data` button in Step 3 and choose a local `.json` or `.csv` file.
+Use the Upload CTOS Data button in Step 3 and choose a local PDF, JSON, or CSV file.
 
 Supported top-level formats:
 
 - An array of debt objects
 - Or an object with `debts` plus optional `profile`
 - Or CSV with a header row
+- Or CTOS PDF (heuristic text extraction)
 
 Example:
 
@@ -94,6 +95,11 @@ CIMB Personal Financing 1,written-off,1100,0,0,CIMB
 Car Loan,active,22000,4.2,540,Maybank
 Old Card Account,ffs,9000,0,0,Public Bank
 ```
+
+PDF notes:
+
+- PDF parsing runs fully in your browser and does not upload your file.
+- CTOS PDFs can vary in layout. If extracted rows are incomplete, use CSV or JSON for full control and accuracy.
 
 ## Author
 
