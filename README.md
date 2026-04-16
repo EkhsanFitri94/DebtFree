@@ -24,6 +24,8 @@ Use the Upload CTOS Data button in Step 3 and choose a local PDF, JSON, or CSV f
 
 After parsing, DebtFree shows an import preview first. You can edit status/amount fields or remove rows, and data is only applied after you click Apply Imported Data.
 
+If you need to wipe imported debt/profile values quickly, use the Clear Imported Data button in Step 3.
+
 Supported top-level formats:
 
 - An array of debt objects

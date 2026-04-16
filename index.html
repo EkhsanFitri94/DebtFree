@@ -404,6 +404,7 @@
         <div class="flex gap-3 mt-4 flex-wrap no-print">
           <button class="btn btn-secondary btn-sm" onclick="addDebt()"><i class="fas fa-plus" style="font-size:11px"></i> Add Debt</button>
           <button class="btn btn-secondary btn-sm" onclick="openCTOSUpload()" style="border-color:rgba(181,122,255,.3);color:var(--purple)"><i class="fas fa-file-upload" style="font-size:11px"></i> Upload CTOS Data</button>
+          <button class="btn btn-danger btn-sm" onclick="clearImportedData()"><i class="fas fa-broom" style="font-size:11px"></i> Clear Imported Data</button>
           <input type="file" id="ctosFileInput" accept=".pdf,.json,.csv,application/pdf,application/json,text/csv" style="display:none" onchange="handleCTOSUpload(event)">
         </div>
       </div>
@@ -843,6 +844,20 @@ function confirmImportPreview() {
   applyCTOSData({profile:pendingImportProfile,debts:debtsForApply});
   closeImportPreview();
   toast(`CTOS data imported from ${sourceName}`);
+}
+
+function clearImportedData() {
+  const hasData=debts.length||parseFloat($('salary').value)||parseFloat($('savings').value)||['cRent','cUtil','cFood','cTrans','cPhone','cIns','cOther'].some(i=>parseFloat($(i).value));
+  if(!hasData){toast('Nothing to clear','err');return}
+  const ok=confirm('Clear all debt and profile fields imported or entered here? This will remove current debts, salary, savings, and monthly commitments.');
+  if(!ok) return;
+  closeImportPreview();
+  debts=[];
+  $('salary').value='';
+  $('savings').value='';
+  ['cRent','cUtil','cFood','cTrans','cPhone','cIns','cOther'].forEach(i=>$(i).value='');
+  rD();
+  toast('Imported debt and profile data cleared');
 }
 
 function handleCTOSUpload(e) {
