@@ -187,7 +187,7 @@
         <ul class="space-y-1 ml-4" style="list-style:disc">
           <li>4-step wizard: Income → Commitments → Debts → Plan</li>
           <li>CTOS-specific debt statuses: Active, Written-Off, F&F, Trade Default</li>
-          <li>Sample CTOS data loader for quick testing</li>
+          <li>Private CTOS JSON upload from your local device</li>
           <li>Avalanche vs Snowball strategy comparison</li>
           <li>Month-by-month payment schedule with interest tracking</li>
           <li>Interactive charts: payoff timeline & payment breakdown</li>
@@ -223,7 +223,7 @@
         <ol class="space-y-1 ml-4" style="list-style:decimal">
           <li>Open <code style="background:var(--bg2);padding:2px 6px;border-radius:4px;font-size:12px">index.html</code> in any modern browser</li>
           <li>Enter your income details and monthly commitments</li>
-          <li>Add your debts with correct CTOS status (use "Load Sample CTOS Data" for demo)</li>
+          <li>Upload your CTOS data JSON from your local device or add debts manually</li>
           <li>Click "Generate Plan" to get your personalized roadmap</li>
           <li>Compare strategies, review the schedule, and follow the action plan</li>
         </ol>
@@ -364,7 +364,8 @@
         </div>
         <div class="flex gap-3 mt-4 flex-wrap no-print">
           <button class="btn btn-secondary btn-sm" onclick="addDebt()"><i class="fas fa-plus" style="font-size:11px"></i> Add Debt</button>
-          <button class="btn btn-secondary btn-sm" onclick="loadCTOS()" style="border-color:rgba(181,122,255,.3);color:var(--purple)"><i class="fas fa-file-import" style="font-size:11px"></i> Load Sample CTOS Data</button>
+          <button class="btn btn-secondary btn-sm" onclick="openCTOSUpload()" style="border-color:rgba(181,122,255,.3);color:var(--purple)"><i class="fas fa-file-upload" style="font-size:11px"></i> Upload CTOS Data</button>
+          <input type="file" id="ctosFileInput" accept=".json,application/json" style="display:none" onchange="handleCTOSUpload(event)">
         </div>
       </div>
 
@@ -466,7 +467,7 @@ function rmDebt(id) { debts=debts.filter(d=>d.id!==id); rD(); }
 
 function rD() {
   const c=$('debtList');
-  if(!debts.length){c.innerHTML='<p class="py-6 text-xs text-center" style="color:var(--muted);opacity:.35">No debts. Click "Add Debt" or "Load Sample CTOS Data".</p>';return}
+  if(!debts.length){c.innerHTML='<p class="py-6 text-xs text-center" style="color:var(--muted);opacity:.35">No debts. Click "Add Debt" or "Upload CTOS Data".</p>';return}
   c.innerHTML=debts.map(d=>{
     const wo=isWO(d),ff=isFFS(d),td=isTD(d),st=isStatic(d);
     const bc=wo?'var(--danger)':ff?'var(--purple)':td?'var(--warn)':'var(--border)';
@@ -504,16 +505,78 @@ function rD() {
 
 function chgSt(id,v) { const d=debts.find(x=>x.id===id); d.st=v; if(v==='wo'||v==='trade'||v==='ffs'){d.rate=0;d.min=0} rD(); }
 
-function loadCTOS() {
-  debts=[];
-  addDebt('CIMB Personal Financing 1','wo',1100,0,0,0,'','CIMB');
-  addDebt('CIMB Personal Financing 2','wo',1000,0,0,0,'','CIMB');
-  addDebt('CIMB Personal Financing 3','wo',2000,0,0,0,'','CIMB');
-  addDebt('Coway Rental','trade',888.50,0,0,0,'','COWAY (M) SDN BHD');
-  $('salary').value='3500'; $('savings').value='1500';
-  $('cRent').value='800'; $('cUtil').value='150'; $('cFood').value='600';
-  $('cTrans').value='200'; $('cPhone').value='80'; $('cIns').value='0'; $('cOther').value='100';
-  rD(); toast('Sample CTOS data loaded — 3 Written-Off + 1 Trade Default');
+function toNum(v) { const n=parseFloat(v); return Number.isFinite(n)?n:0; }
+function normSt(v) {
+  const s=String(v||'').trim().toLowerCase();
+  if(['wo','w','written-off','written off','writtenoff'].includes(s)) return 'wo';
+  if(['ffs','full and final','full & final','full-final','full final settlement'].includes(s)) return 'ffs';
+  if(['trade','trade default'].includes(s)) return 'trade';
+  if(['active','loan'].includes(s)) return 'active';
+  if(['family','friend','family/friend'].includes(s)) return 'family';
+  return 'other';
+}
+
+function openCTOSUpload() { $('ctosFileInput').click(); }
+
+function handleCTOSUpload(e) {
+  const file=e.target.files&&e.target.files[0];
+  if(!file) return;
+  const reader=new FileReader();
+  reader.onload=()=>{
+    try {
+      const raw=String(reader.result||'').trim();
+      if(!raw) throw new Error('Selected file is empty');
+      const parsed=JSON.parse(raw);
+      applyCTOSData(parsed);
+      toast(`CTOS data uploaded from ${file.name}`);
+    } catch (err) {
+      toast(err.message||'Failed to upload CTOS data. Use valid JSON format.','err');
+    } finally {
+      e.target.value='';
+    }
+  };
+  reader.onerror=()=>{toast('Unable to read selected file','err');e.target.value='';};
+  reader.readAsText(file);
+}
+
+function applyCTOSData(payload) {
+  const root=Array.isArray(payload)?{debts:payload}:payload;
+  const items=root.debts||root.records||root.items;
+  if(!Array.isArray(items)) throw new Error('JSON must include an array in debts, records, or items');
+
+  const imported=[];
+  for(const row of items){
+    if(!row||typeof row!=='object') continue;
+    const n=String(row.name||row.debtName||row.account||'').trim();
+    const bal=toNum(row.outstanding??row.balance??row.bal);
+    if(!n||bal<=0) continue;
+    const st=normSt(row.status||row.st||row.type);
+    const rate=toNum(row.interestRate??row.rate);
+    const min=toNum(row.minPayment??row.minPay??row.minimum);
+    const ffa=toNum(row.ffAmount??row.ffa??row.settlementAmount);
+    const ffd=String(row.ffDeadline||row.ffd||'').trim();
+    const lender=String(row.lender||row.creditor||'').trim();
+    imported.push({id:Date.now()+Math.random(),n,st,bal,rate:st==='active'?rate:0,min:st==='active'?min:0,ffa:st==='ffs'?ffa:0,ffd,lender});
+  }
+
+  if(!imported.length) throw new Error('No valid debt records found. Include at least name and outstanding amount.');
+  debts=imported;
+  rD();
+
+  const profile=root.profile||{};
+  const commitments=profile.commitments||{};
+  const fields={
+    salary:profile.salary,
+    savings:profile.savings,
+    cRent:commitments.rent,
+    cUtil:commitments.utilities,
+    cFood:commitments.food,
+    cTrans:commitments.transportation,
+    cPhone:commitments.phone,
+    cIns:commitments.insurance,
+    cOther:commitments.other
+  };
+  Object.keys(fields).forEach(k=>{ if(fields[k]!==undefined&&fields[k]!==null) $(k).value=toNum(fields[k])||''; });
 }
 
 // ── Navigation ──
@@ -719,7 +782,7 @@ function rTips(d,r){
     tips.push({i:'fa-phone-alt',c:'var(--danger)',bg:'var(--danger-dim)',t:'Call Banks for W/O Settlement',
       x:`You have ${wo.length} written-off account(s) totalling RM ${fmt(woT)}. Call each bank's <strong>Settlement/Recovery Department</strong> — not general hotline. Ask for "full and final settlement offer." Note the offer amount, validity, and get it <strong>in writing</strong>.`});
     tips.push({i:'fa-chart-line',c:'var(--danger)',bg:'var(--danger-dim)',t:'CTOS Score Recovery After W/O Settlement',
-      x:'After F&F payment, bank updates CCRIS within 1-2 billing cycles. Your CTOS score (currently 375) should improve to 400-450 within 3 months. Avoid new credit applications until score crosses 550.'});
+      x:'After F&F payment, bank updates CCRIS within 1-2 billing cycles. CTOS score improvement typically appears over the next few months. Avoid multiple new credit applications until your profile is cleaner and utilization is lower.'});
     tips.push({i:'fa-calculator',c:'var(--danger)',bg:'var(--danger-dim)',t:'Negotiation Strategy',
       x:`Start by offering 30% of outstanding. Work upward. Typical settlement: ${wo.map(x=>`${x.n}: RM ${fmt(x.bal*.3)}–${fmt(x.bal*.7)}`).join(', ')}. Never accept the first offer. Ask to speak to a supervisor if needed.`});
   }
