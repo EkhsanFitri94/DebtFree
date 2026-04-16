@@ -22,7 +22,7 @@ No backend is required. All processing stays inside your browser.
 
 Use the Upload CTOS Data button in Step 3 and choose a local PDF, JSON, or CSV file.
 
-After parsing, DebtFree shows an import preview first. Your data is only applied after you click Apply Imported Data.
+After parsing, DebtFree shows an import preview first. You can edit status/amount fields or remove rows, and data is only applied after you click Apply Imported Data.
 
 Supported top-level formats:
 

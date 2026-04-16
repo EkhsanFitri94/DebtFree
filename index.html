@@ -270,6 +270,8 @@
             <th class="text-right p-3">Rate %</th>
             <th class="text-right p-3">Min Pay</th>
             <th class="text-right p-3">F&F</th>
+            <th class="text-left p-3">Lender</th>
+            <th class="text-right p-3">Action</th>
           </tr>
         </thead>
         <tbody id="importPreviewTable"></tbody>
@@ -467,7 +469,7 @@
 // ── State ──
 let step = 1, sIncomes = [], debts = [], strat = 'avalanche', chLine = null, chPie = null, res = null;
 let pdfjsReady = null;
-let pendingImportPayload = null, pendingImportSource = '';
+let pendingImportRows = [], pendingImportProfile = {}, pendingImportSource = '';
 
 // ── Helpers ──
 const $ = id => document.getElementById(id);
@@ -476,6 +478,7 @@ const isFFS = d => d.st === 'ffs';
 const isTD = d => d.st === 'trade';
 const isStatic = d => isWO(d) || isFFS(d) || isTD(d);
 const fmt = n => (Math.round(n)||0).toLocaleString();
+const escAttr = s => String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 
 function toast(m, t='ok') { const e=$('toast'); e.className=`toast ${t}`; e.innerHTML=`<i class="fas fa-${t==='ok'?'check-circle':'exclamation-circle'}"></i> ${m}`; e.classList.add('show'); setTimeout(()=>e.classList.remove('show'),3500); }
 function openReadme() { $('readmeModal').classList.add('open'); }
@@ -771,42 +774,73 @@ function normalizeImportedPayload(payload) {
 
 function openImportPreview(payload, sourceName='selected file') {
   const normalized=normalizeImportedPayload(payload);
-  const rows=normalized.imported;
-  const total=rows.reduce((s,x)=>s+x.bal,0);
-  pendingImportPayload=payload;
+  pendingImportRows=normalized.imported.map(x=>({ ...x }));
+  pendingImportProfile={ ...(normalized.profile||{}) };
   pendingImportSource=sourceName;
-
-  $('importPreviewSummary').innerHTML=`<div class="flex flex-wrap gap-2">
-    <span class="badge" style="background:var(--accent-dim);color:var(--accent)">${rows.length} debt rows detected</span>
-    <span class="badge" style="background:var(--info-dim);color:var(--info)">Total RM ${fmt(total)}</span>
-    <span class="badge" style="background:var(--warn-dim);color:var(--warn)">${sourceName}</span>
-  </div><p class="mt-2" style="color:var(--muted)">Check status mapping and amounts before applying.</p>`;
-
-  $('importPreviewTable').innerHTML=rows.slice(0,100).map(x=>`<tr style="border-bottom:1px solid rgba(26,46,36,.5)">
-    <td class="p-3">${x.n}</td>
-    <td class="p-3">${x.st}</td>
-    <td class="p-3 text-right">RM ${fmt(x.bal)}</td>
-    <td class="p-3 text-right">${x.rate?x.rate.toFixed(2):'0.00'}</td>
-    <td class="p-3 text-right">RM ${fmt(x.min)}</td>
-    <td class="p-3 text-right">RM ${fmt(x.ffa)}</td>
-  </tr>`).join('');
-
-  if(rows.length>100){
-    $('importPreviewTable').innerHTML += `<tr><td colspan="6" class="p-3" style="color:var(--muted)">Showing first 100 rows only.</td></tr>`;
-  }
+  refreshImportPreviewSummary();
+  renderImportPreviewRows();
   $('importPreviewModal').classList.add('open');
+}
+
+function refreshImportPreviewSummary() {
+  const rows=pendingImportRows.filter(x=>x.n&&x.bal>0);
+  const total=rows.reduce((s,x)=>s+x.bal,0);
+  const stat={active:0,wo:0,ffs:0,trade:0,other:0};
+  rows.forEach(x=>{const k=stat[x.st]!==undefined?x.st:'other';stat[k]+=1;});
+  $('importPreviewSummary').innerHTML=`<div class="flex flex-wrap gap-2">
+    <span class="badge" style="background:var(--accent-dim);color:var(--accent)">${rows.length} valid row(s)</span>
+    <span class="badge" style="background:var(--info-dim);color:var(--info)">Total RM ${fmt(total)}</span>
+    <span class="badge" style="background:var(--warn-dim);color:var(--warn)">${pendingImportSource}</span>
+    <span class="badge" style="background:var(--card2);color:var(--fg2)">A:${stat.active} W:${stat.wo} FFS:${stat.ffs} T:${stat.trade}</span>
+  </div><p class="mt-2" style="color:var(--muted)">Edit any row, remove incorrect rows, then apply.</p>`;
+}
+
+function renderImportPreviewRows() {
+  $('importPreviewTable').innerHTML=pendingImportRows.map((x,i)=>`<tr style="border-bottom:1px solid rgba(26,46,36,.5)">
+    <td class="p-2"><input class="input-field" style="padding:7px 10px;font-size:12px" value="${escAttr(x.n)}" onchange="updateImportPreviewField(${i},'n',this.value)"></td>
+    <td class="p-2"><select class="input-field" style="padding:7px 10px;font-size:12px" onchange="updateImportPreviewField(${i},'st',this.value)">${DT.map(t=>`<option value="${t.v}" ${x.st===t.v?'selected':''}>${t.v}</option>`).join('')}</select></td>
+    <td class="p-2"><input type="number" min="0" step="0.01" class="input-field" style="padding:7px 10px;font-size:12px;text-align:right" value="${x.bal||0}" onchange="updateImportPreviewField(${i},'bal',this.value)"></td>
+    <td class="p-2"><input type="number" min="0" step="0.01" class="input-field" style="padding:7px 10px;font-size:12px;text-align:right" value="${x.rate||0}" onchange="updateImportPreviewField(${i},'rate',this.value)"></td>
+    <td class="p-2"><input type="number" min="0" step="0.01" class="input-field" style="padding:7px 10px;font-size:12px;text-align:right" value="${x.min||0}" onchange="updateImportPreviewField(${i},'min',this.value)"></td>
+    <td class="p-2"><input type="number" min="0" step="0.01" class="input-field" style="padding:7px 10px;font-size:12px;text-align:right" value="${x.ffa||0}" onchange="updateImportPreviewField(${i},'ffa',this.value)"></td>
+    <td class="p-2"><input class="input-field" style="padding:7px 10px;font-size:12px" value="${escAttr(x.lender)}" onchange="updateImportPreviewField(${i},'lender',this.value)"></td>
+    <td class="p-2 text-right"><button class="btn btn-danger btn-sm" onclick="removeImportPreviewRow(${i})"><i class="fas fa-trash" style="font-size:10px"></i></button></td>
+  </tr>`).join('');
+}
+
+function updateImportPreviewField(index, field, value) {
+  const row=pendingImportRows[index];
+  if(!row) return;
+  if(['bal','rate','min','ffa'].includes(field)) row[field]=toNum(value);
+  else if(field==='st') row.st=normSt(value);
+  else row[field]=String(value||'').trim();
+
+  if(row.st!=='active'){row.rate=0;row.min=0;}
+  if(row.st!=='ffs'){row.ffa=0;row.ffd='';}
+  refreshImportPreviewSummary();
+}
+
+function removeImportPreviewRow(index) {
+  pendingImportRows=pendingImportRows.filter((_,i)=>i!==index);
+  renderImportPreviewRows();
+  refreshImportPreviewSummary();
 }
 
 function closeImportPreview() {
   $('importPreviewModal').classList.remove('open');
-  pendingImportPayload=null;
+  pendingImportRows=[];
+  pendingImportProfile={};
   pendingImportSource='';
 }
 
 function confirmImportPreview() {
-  if(!pendingImportPayload){toast('No import data to apply','err');return}
+  if(!pendingImportRows.length){toast('No import data to apply','err');return}
+  const debtsForApply=pendingImportRows.filter(x=>x.n&&x.bal>0).map(x=>(
+    {name:x.n,status:x.st,outstanding:x.bal,interestRate:x.rate,minPayment:x.min,ffAmount:x.ffa,ffDeadline:x.ffd||'',lender:x.lender||''}
+  ));
+  if(!debtsForApply.length){toast('All rows are invalid. Add name and outstanding amount.','err');return}
   const sourceName=pendingImportSource||'selected file';
-  applyCTOSData(pendingImportPayload);
+  applyCTOSData({profile:pendingImportProfile,debts:debtsForApply});
   closeImportPreview();
   toast(`CTOS data imported from ${sourceName}`);
 }
