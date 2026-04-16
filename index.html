@@ -340,6 +340,19 @@
         <input type="number" class="input-field" id="savings" placeholder="e.g. 1500" min="0" step="100" aria-label="Total savings">
       </div>
 
+      <div class="card mb-8">
+        <div class="flex items-center justify-between gap-4">
+          <div>
+            <h3 class="font-semibold text-sm">Remember this device</h3>
+            <p class="text-xs" style="color:var(--muted)">Optional local draft saving in your browser. Off by default.</p>
+          </div>
+          <label class="inline-flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" id="draftSaveToggle" class="w-4 h-4" onchange="setDraftSaveEnabled(this.checked)">
+            <span class="text-xs" style="color:var(--fg2)">Enable</span>
+          </label>
+        </div>
+      </div>
+
       <div class="flex justify-end no-print"><button class="btn btn-primary" onclick="go(2)">Continue <i class="fas fa-arrow-right" style="font-size:12px"></i></button></div>
     </div>
   </section>
@@ -471,6 +484,10 @@
 let step = 1, sIncomes = [], debts = [], strat = 'avalanche', chLine = null, chPie = null, res = null;
 let pdfjsReady = null;
 let pendingImportRows = [], pendingImportProfile = {}, pendingImportSource = '';
+let draftSaveTimer = null;
+
+const DRAFT_ENABLED_KEY = 'DebtFree:draftEnabled';
+const DRAFT_STATE_KEY = 'DebtFree:draftState';
 
 // ── Helpers ──
 const $ = id => document.getElementById(id);
@@ -486,10 +503,12 @@ function openReadme() { $('readmeModal').classList.add('open'); }
 function closeReadme() { $('readmeModal').classList.remove('open'); }
  $('readmeModal').addEventListener('click', e => { if(e.target===e.currentTarget) closeReadme(); });
  $('importPreviewModal').addEventListener('click', e => { if(e.target===e.currentTarget) closeImportPreview(); });
+ document.addEventListener('input', scheduleDraftSave);
+ document.addEventListener('change', scheduleDraftSave);
 
 // ── Side Income ──
-function addSI(n='',a='') { sIncomes.push({id:Date.now(),n,a}); rSI(); }
-function rmSI(id) { sIncomes=sIncomes.filter(s=>s.id!==id); rSI(); }
+function addSI(n='',a='') { sIncomes.push({id:Date.now(),n,a}); rSI(); scheduleDraftSave(); }
+function rmSI(id) { sIncomes=sIncomes.filter(s=>s.id!==id); rSI(); scheduleDraftSave(); }
 function rSI() {
   const c=$('sideIncomeList');
   if(!sIncomes.length){c.innerHTML='<p class="text-xs" style="color:var(--muted);opacity:.35">No side income</p>';return}
@@ -506,8 +525,9 @@ const DT = [
 function addDebt(n='',st='active',bal='',rate='',min='',ffa='',ffd='',lender='') {
   debts.push({id:Date.now()+Math.random(),n,st,bal:parseFloat(bal)||0,rate:parseFloat(rate)||0,min:parseFloat(min)||0,ffa:parseFloat(ffa)||0,ffd,lender:lender||''});
   rD();
+  scheduleDraftSave();
 }
-function rmDebt(id) { debts=debts.filter(d=>d.id!==id); rD(); }
+function rmDebt(id) { debts=debts.filter(d=>d.id!==id); rD(); scheduleDraftSave(); }
 
 function rD() {
   const c=$('debtList');
@@ -547,7 +567,7 @@ function rD() {
   }).join('');
 }
 
-function chgSt(id,v) { const d=debts.find(x=>x.id===id); d.st=v; if(v==='wo'||v==='trade'||v==='ffs'){d.rate=0;d.min=0} rD(); }
+function chgSt(id,v) { const d=debts.find(x=>x.id===id); d.st=v; if(v==='wo'||v==='trade'||v==='ffs'){d.rate=0;d.min=0} rD(); scheduleDraftSave(); }
 
 function toNum(v) { const n=parseFloat(v); return Number.isFinite(n)?n:0; }
 function normSt(v) {
@@ -558,6 +578,101 @@ function normSt(v) {
   if(['active','loan'].includes(s)) return 'active';
   if(['family','friend','family/friend'].includes(s)) return 'family';
   return 'other';
+}
+
+function isDraftSaveEnabled() {
+  try { return localStorage.getItem(DRAFT_ENABLED_KEY) === '1'; } catch { return false; }
+}
+
+function setDraftSaveEnabled(enabled) {
+  try {
+    localStorage.setItem(DRAFT_ENABLED_KEY, enabled ? '1' : '0');
+    if (!enabled) localStorage.removeItem(DRAFT_STATE_KEY);
+  } catch {}
+  if (enabled) {
+    scheduleDraftSave(true);
+    toast('Local draft saving enabled');
+  } else {
+    toast('Local draft saving disabled');
+  }
+}
+
+function serializeDraftState() {
+  return {
+    salary: $('salary').value || '',
+    savings: $('savings').value || '',
+    commitments: {
+      rent: $('cRent').value || '',
+      utilities: $('cUtil').value || '',
+      food: $('cFood').value || '',
+      transportation: $('cTrans').value || '',
+      phone: $('cPhone').value || '',
+      insurance: $('cIns').value || '',
+      other: $('cOther').value || ''
+    },
+    sideIncomes: sIncomes.map(s => ({ ...s })),
+    debts: debts.map(d => ({ ...d })),
+    strat
+  };
+}
+
+function applyDraftState(state) {
+  if (!state || typeof state !== 'object') return false;
+  $('salary').value = state.salary || '';
+  $('savings').value = state.savings || '';
+  const commitments = state.commitments || {};
+  $('cRent').value = commitments.rent || '';
+  $('cUtil').value = commitments.utilities || '';
+  $('cFood').value = commitments.food || '';
+  $('cTrans').value = commitments.transportation || '';
+  $('cPhone').value = commitments.phone || '';
+  $('cIns').value = commitments.insurance || '';
+  $('cOther').value = commitments.other || '';
+  sIncomes = Array.isArray(state.sideIncomes) ? state.sideIncomes.map(s => ({ id: s.id || Date.now() + Math.random(), n: s.n || '', a: s.a || '' })) : [];
+  debts = Array.isArray(state.debts) ? state.debts.map(d => ({
+    id: d.id || Date.now() + Math.random(),
+    n: d.n || '',
+    st: normSt(d.st || d.status || 'active'),
+    bal: toNum(d.bal),
+    rate: toNum(d.rate),
+    min: toNum(d.min),
+    ffa: toNum(d.ffa),
+    ffd: d.ffd || '',
+    lender: d.lender || ''
+  })) : [];
+  strat = state.strat === 'snowball' ? 'snowball' : 'avalanche';
+  rSI();
+  rD();
+  return true;
+}
+
+function loadDraftState() {
+  let enabled = false;
+  try { enabled = localStorage.getItem(DRAFT_ENABLED_KEY) === '1'; } catch {}
+  $('draftSaveToggle').checked = enabled;
+  if (!enabled) return false;
+  try {
+    const raw = localStorage.getItem(DRAFT_STATE_KEY);
+    if (!raw) return false;
+    return applyDraftState(JSON.parse(raw));
+  } catch {
+    return false;
+  }
+}
+
+function saveDraftState() {
+  if (!isDraftSaveEnabled()) return;
+  try { localStorage.setItem(DRAFT_STATE_KEY, JSON.stringify(serializeDraftState())); } catch {}
+}
+
+function scheduleDraftSave(immediate = false) {
+  if (!isDraftSaveEnabled()) return;
+  if (draftSaveTimer) clearTimeout(draftSaveTimer);
+  if (immediate) {
+    saveDraftState();
+    return;
+  }
+  draftSaveTimer = setTimeout(saveDraftState, 150);
 }
 
 function openCTOSUpload() { $('ctosFileInput').click(); }
@@ -857,6 +972,7 @@ function clearImportedData() {
   $('savings').value='';
   ['cRent','cUtil','cFood','cTrans','cPhone','cIns','cOther'].forEach(i=>$(i).value='');
   rD();
+  scheduleDraftSave(true);
   toast('Imported debt and profile data cleared');
 }
 
@@ -908,6 +1024,7 @@ function applyCTOSData(payload) {
     cOther:commitments.other
   };
   Object.keys(fields).forEach(k=>{ if(fields[k]!==undefined&&fields[k]!==null) $(k).value=toNum(fields[k])||''; });
+  scheduleDraftSave(true);
 }
 
 // ── Navigation ──
@@ -1149,10 +1266,10 @@ function rTips(d,r){
 }
 
 // ── Reset ──
-function reset(){sIncomes=[];debts=[];strat='avalanche';res=null;$('salary').value='';$('savings').value='';['cRent','cUtil','cFood','cTrans','cPhone','cIns','cOther'].forEach(i=>$(i).value='');rSI();rD();go(1);toast('Reset complete')}
+function reset(){sIncomes=[];debts=[];strat='avalanche';res=null;$('salary').value='';$('savings').value='';['cRent','cUtil','cFood','cTrans','cPhone','cIns','cOther'].forEach(i=>$(i).value='');rSI();rD();scheduleDraftSave(true);go(1);toast('Reset complete')}
 
 // ── Init ──
-addSI();addDebt('','active','','','','','','');rSI();rD();
+if(!loadDraftState()){addSI();addDebt('','active','','','','','','');rSI();rD()}
 </script>
 </body>
 </html>

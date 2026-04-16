@@ -26,6 +26,8 @@ After parsing, DebtFree shows an import preview first. You can edit status/amoun
 
 If you need to wipe imported debt/profile values quickly, use the Clear Imported Data button in Step 3.
 
+Optional: enable Remember this device if you want the app to keep your draft locally in your browser. It stays off unless you turn it on.
+
 Supported top-level formats:
 
 - An array of debt objects
