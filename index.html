@@ -466,9 +466,15 @@
       </div>
       <div class="card mb-6" id="progressBlock"></div>
       <div class="card mb-6">
-        <div class="flex items-center justify-between mb-4">
-          <h4 class="font-semibold text-sm" style="color:var(--fg2)">Monthly Schedule</h4>
-          <span class="badge" style="background:var(--accent-dim);color:var(--accent)" id="moLabel"></span>
+        <div class="flex items-center justify-between gap-3 mb-4 flex-wrap">
+          <h4 class="font-semibold text-sm" style="color:var(--fg2)">Payoff Schedule</h4>
+          <div class="flex items-center gap-2 flex-wrap no-print">
+            <div class="inline-flex rounded-lg overflow-hidden" style="border:1px solid var(--border)">
+              <button class="btn btn-ghost btn-sm" onclick="setScheduleViewMode('monthly')" style="border-radius:0;background:${scheduleViewMode==='monthly'?'var(--accent-dim)':'transparent'};color:${scheduleViewMode==='monthly'?'var(--accent)':'var(--fg2)'}">Monthly</button>
+              <button class="btn btn-ghost btn-sm" onclick="setScheduleViewMode('yearly')" style="border-radius:0;background:${scheduleViewMode==='yearly'?'var(--accent-dim)':'transparent'};color:${scheduleViewMode==='yearly'?'var(--accent)':'var(--fg2)'}">Yearly</button>
+            </div>
+            <span class="badge" style="background:var(--accent-dim);color:var(--accent)" id="moLabel"></span>
+          </div>
         </div>
         <div style="max-height:380px;overflow-y:auto" id="schTable"></div>
       </div>
@@ -502,8 +508,10 @@ let pdfjsReady = null;
 let pendingImportRows = [], pendingImportProfile = {}, pendingImportSource = '';
 let draftSaveTimer = null;
 let planRefreshTimer = null;
+let scheduleViewMode = 'monthly';
 let scheduleDisplayLimit = 24;
 const SCHEDULE_CHUNK_SIZE = 24;
+const YEARLY_CHUNK_SIZE = 4;
 
 const DRAFT_ENABLED_KEY = 'DebtFree:draftEnabled';
 const DRAFT_STATE_KEY = 'DebtFree:draftState';
@@ -532,6 +540,11 @@ function schedulePlanRefresh(immediate = false) {
   planRefreshTimer = setTimeout(() => {
     if (step === 4) run();
   }, 220);
+}
+function setScheduleViewMode(mode) {
+  scheduleViewMode = mode === 'yearly' ? 'yearly' : 'monthly';
+  scheduleDisplayLimit = scheduleViewMode === 'yearly' ? YEARLY_CHUNK_SIZE : SCHEDULE_CHUNK_SIZE;
+  if (res) rSch(res);
 }
  document.addEventListener('input', () => { scheduleDraftSave(); schedulePlanRefresh(); });
  document.addEventListener('change', () => { scheduleDraftSave(); schedulePlanRefresh(); });
@@ -1177,7 +1190,7 @@ function calc(data,st) {
 }
 
 // ── Run ──
-function run(){const d=gather();res=calc(d,strat);scheduleDisplayLimit=SCHEDULE_CHUNK_SIZE;rStats(d,res);rWO(d);rFFS(d,res);rTrade(d);rHealth(d);rSurplus(d,res);rStrat(d);rLine(res);rPie(res,d);rProg(d,res);rSch(res);rTips(d,res);setTimeout(()=>{if(chLine){chLine.resize();chLine.update()}if(chPie){chPie.resize();chPie.update()}},300)}
+function run(){const d=gather();res=calc(d,strat);scheduleDisplayLimit=scheduleViewMode==='yearly'?YEARLY_CHUNK_SIZE:SCHEDULE_CHUNK_SIZE;rStats(d,res);rWO(d);rFFS(d,res);rTrade(d);rHealth(d);rSurplus(d,res);rStrat(d);rLine(res);rPie(res,d);rProg(d,res);rSch(res);rTips(d,res);setTimeout(()=>{if(chLine){chLine.resize();chLine.update()}if(chPie){chPie.resize();chPie.update()}},300)}
 
 // ── Render: Stats ──
 function rStats(d,r){
@@ -1374,9 +1387,11 @@ function swStr(id){strat=id;const d=gather();res=calc(d,strat);rStats(d,res);rSt
 
 function schView(action){
   if(!res||!res.sched||!res.sched.length) return;
-  if(action==='more') scheduleDisplayLimit=Math.min(scheduleDisplayLimit+SCHEDULE_CHUNK_SIZE,res.sched.length);
-  if(action==='all') scheduleDisplayLimit=res.sched.length;
-  if(action==='less') scheduleDisplayLimit=SCHEDULE_CHUNK_SIZE;
+  const chunk=scheduleViewMode==='yearly'?YEARLY_CHUNK_SIZE:SCHEDULE_CHUNK_SIZE;
+  const total=scheduleViewMode==='yearly'?Math.max(1,Math.ceil(res.sched.length/12)):res.sched.length;
+  if(action==='more') scheduleDisplayLimit=Math.min(scheduleDisplayLimit+chunk,total);
+  if(action==='all') scheduleDisplayLimit=total;
+  if(action==='less') scheduleDisplayLimit=chunk;
   rSch(res);
 }
 
@@ -1417,20 +1432,39 @@ function rProg(d,r){
 // ── Render: Schedule ──
 function rSch(r){
   if(!r||!r.sched){$('moLabel').textContent='0 months';$('schTable').innerHTML='';return}
-  const total=r.sched.length;
+  const yearlyRows=[];
+  for(let i=0;i<r.sched.length;i+=12){
+    const group=r.sched.slice(i,i+12);
+    const first=group[0], last=group[group.length-1];
+    yearlyRows.push({
+      label:`Year ${yearlyRows.length+1}`,
+      span:`M${first.mo} - M${last.mo}`,
+      pr:group.reduce((s,m)=>s+m.pay.filter(p=>p.t==='min').reduce((a,p)=>a+p.a,0),0),
+      ex:group.reduce((s,m)=>s+m.pay.filter(p=>p.t==='extra').reduce((a,p)=>a+p.a,0),0),
+      ti:group.reduce((s,m)=>s+m.ti,0),
+      ff:group.reduce((s,m)=>s+m.pay.filter(p=>p.t==='ffs').reduce((a,p)=>a+p.a,0),0),
+      tr:group.reduce((s,m)=>s+m.pay.filter(p=>p.t==='trade').reduce((a,p)=>a+p.a,0),0)
+    });
+  }
+  const total=scheduleViewMode==='yearly'?yearlyRows.length:r.sched.length;
   const shown=Math.min(scheduleDisplayLimit,total);
-  const rows=r.sched.slice(0,shown);
-  $('moLabel').textContent=`${shown}/${total} months`;
-  $('schTable').innerHTML=`<div class="sch-row hdr"><span>Month</span><span>Min Pay</span><span>Extra</span><span>Interest</span><span class="text-right hide-sm">Special</span></div>
-  ${rows.map(m=>{const dt=new Date();dt.setMonth(dt.getMonth()+m.mo-1);const ds=dt.toLocaleDateString('en-MY',{month:'short',year:'2-digit'});
+  const rows=scheduleViewMode==='yearly'?yearlyRows.slice(0,shown):r.sched.slice(0,shown);
+  $('moLabel').textContent=scheduleViewMode==='yearly'?`${shown}/${total} years`:`${shown}/${total} months`;
+  $('schTable').innerHTML=`<div class="sch-row hdr"><span>${scheduleViewMode==='yearly'?'Period':'Month'}</span><span>Min Pay</span><span>Extra</span><span>Interest</span><span class="text-right hide-sm">Special</span></div>
+  ${rows.map(m=>{
+    if(scheduleViewMode==='yearly'){
+      return `<div class="sch-row" style="${m.ff||m.tr?'background:rgba(181,122,255,.03)':''}"><span style="color:var(--muted)">${m.label}<span class="text-xs" style="display:block;color:var(--muted);opacity:.8">${m.span}</span></span><span>RM ${fmt(m.pr)}</span><span style="color:${m.ex?'var(--accent)':'var(--muted)'}">${m.ex?'RM '+fmt(m.ex):'—'}</span><span style="color:var(--warn)">RM ${fmt(m.ti)}</span><span class="text-right hide-sm" style="font-size:11px">${m.ff>0?`<span style="color:var(--purple)">F&F RM ${fmt(m.ff)}</span>`:m.tr>0?`<span style="color:var(--warn)">Trade RM ${fmt(m.tr)}</span>`:'—'}</span></div>`;
+    }
+    const dt=new Date();dt.setMonth(dt.getMonth()+m.mo-1);const ds=dt.toLocaleDateString('en-MY',{month:'short',year:'2-digit'});
     const pr=m.pay.filter(p=>p.t==='min').reduce((s,p)=>s+p.a,0);
     const ex=m.pay.filter(p=>p.t==='extra').reduce((s,p)=>s+p.a,0);
     const ff=m.pay.filter(p=>p.t==='ffs').reduce((s,p)=>s+p.a,0);
     const tr=m.pay.filter(p=>p.t==='trade').reduce((s,p)=>s+p.a,0);
     const sp=ff>0?`<span style="color:var(--purple)"><i class="fas fa-file-signature" style="font-size:9px"></i> F&F RM ${fmt(ff)}</span>`:tr>0?`<span style="color:var(--warn)"><i class="fas fa-store" style="font-size:9px"></i> Trade RM ${fmt(tr)}</span>`:(m.pay.find(p=>p.t==='extra')||{}).n||'—';
-    return `<div class="sch-row" style="${ff||tr?'background:rgba(181,122,255,.03)':''}"><span style="color:var(--muted)">${ds}</span><span>RM ${fmt(pr)}</span><span style="color:${ex?'var(--accent)':'var(--muted)'}">${ex?'RM '+fmt(ex):'—'}</span><span style="color:var(--warn)">RM ${fmt(m.ti)}</span><span class="text-right hide-sm" style="font-size:11px">${sp}</span></div>`}).join('')}
-  ${total>shown?`<div class="pt-3" style="border-top:1px solid var(--border)"><p class="text-xs mb-2" style="color:var(--muted)">Showing ${shown} of ${total} months</p><div class="flex gap-2 flex-wrap"><button class="btn btn-secondary btn-sm" onclick="schView('more')"><i class="fas fa-plus" style="font-size:10px"></i> Show ${Math.min(SCHEDULE_CHUNK_SIZE,total-shown)} More</button><button class="btn btn-ghost btn-sm" onclick="schView('all')">Show All</button></div></div>`:''}
-  ${shown> SCHEDULE_CHUNK_SIZE?`<div class="pt-2"><button class="btn btn-ghost btn-sm" onclick="schView('less')">Show Less</button></div>`:''}`;
+    return `<div class="sch-row" style="${ff||tr?'background:rgba(181,122,255,.03)':''}"><span style="color:var(--muted)">${ds}</span><span>RM ${fmt(pr)}</span><span style="color:${ex?'var(--accent)':'var(--muted)'}">${ex?'RM '+fmt(ex):'—'}</span><span style="color:var(--warn)">RM ${fmt(m.ti)}</span><span class="text-right hide-sm" style="font-size:11px">${sp}</span></div>`}
+  }).join('')}
+  ${total>shown?`<div class="pt-3" style="border-top:1px solid var(--border)"><p class="text-xs mb-2" style="color:var(--muted)">Showing ${shown} of ${total} ${scheduleViewMode==='yearly'?'years':'months'}</p><div class="flex gap-2 flex-wrap"><button class="btn btn-secondary btn-sm" onclick="schView('more')"><i class="fas fa-plus" style="font-size:10px"></i> Show ${Math.min(scheduleViewMode==='yearly'?YEARLY_CHUNK_SIZE:SCHEDULE_CHUNK_SIZE,total-shown)} More</button><button class="btn btn-ghost btn-sm" onclick="schView('all')">Show All</button></div></div>`:''}
+  ${shown> (scheduleViewMode==='yearly'?YEARLY_CHUNK_SIZE:SCHEDULE_CHUNK_SIZE)?`<div class="pt-2"><button class="btn btn-ghost btn-sm" onclick="schView('less')">Show Less</button></div>`:''}`;
 }
 
 // ── Render: Tips ──
@@ -1478,7 +1512,7 @@ function rTips(d,r){
 }
 
 // ── Reset ──
-function reset(){sIncomes=[];debts=[];strat='avalanche';invRisk='balanced';res=null;scheduleDisplayLimit=SCHEDULE_CHUNK_SIZE;$('salary').value='';$('savings').value='';['cRent','cUtil','cFood','cTrans','cPhone','cIns','cOther'].forEach(i=>$(i).value='');rSI();rD();scheduleDraftSave(true);go(1);toast('Reset complete')}
+function reset(){sIncomes=[];debts=[];strat='avalanche';invRisk='balanced';scheduleViewMode='monthly';res=null;scheduleDisplayLimit=SCHEDULE_CHUNK_SIZE;$('salary').value='';$('savings').value='';['cRent','cUtil','cFood','cTrans','cPhone','cIns','cOther'].forEach(i=>$(i).value='');rSI();rD();scheduleDraftSave(true);go(1);toast('Reset complete')}
 
 // ── Init ──
 if(!loadDraftState()){addSI();addDebt('','active','','','','','','');rSI();rD()}
