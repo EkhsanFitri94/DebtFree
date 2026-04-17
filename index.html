@@ -497,7 +497,7 @@
    ================================================================ */
 
 // ── State ──
-let step = 1, sIncomes = [], debts = [], strat = 'avalanche', chLine = null, chPie = null, res = null;
+let step = 1, sIncomes = [], debts = [], strat = 'avalanche', invRisk = 'balanced', chLine = null, chPie = null, res = null;
 let pdfjsReady = null;
 let pendingImportRows = [], pendingImportProfile = {}, pendingImportSource = '';
 let draftSaveTimer = null;
@@ -644,7 +644,8 @@ function serializeDraftState() {
     },
     sideIncomes: sIncomes.map(s => ({ ...s })),
     debts: debts.map(d => ({ ...d })),
-    strat
+    strat,
+    invRisk
   };
 }
 
@@ -674,6 +675,7 @@ function applyDraftState(state) {
     lender: d.lender || ''
   })) : [];
   strat = state.strat === 'snowball' ? 'snowball' : 'avalanche';
+  invRisk = ['conservative', 'balanced', 'growth'].includes(state.invRisk) ? state.invRisk : 'balanced';
   rSI();
   rD();
   return true;
@@ -706,6 +708,12 @@ function scheduleDraftSave(immediate = false) {
     return;
   }
   draftSaveTimer = setTimeout(saveDraftState, 150);
+}
+
+function setInvRisk(level) {
+  invRisk = ['conservative', 'balanced', 'growth'].includes(level) ? level : 'balanced';
+  scheduleDraftSave();
+  if (step === 4 && res) rSurplus(gather(), res);
 }
 
 function exportDraftBackup() {
@@ -1272,9 +1280,22 @@ function rSurplus(d,r){
   const emergencyTarget=d.tc*6;
   const emergencyGap=Math.max(0,emergencyTarget-d.sav);
   const hasActive=d.act&&d.act.length>0;
+  const riskCfg={
+    conservative:{label:'Conservative',invShift:-0.1,debtShift:0.05,hint:'Focus on stability: money market funds, short-term sukuk/bond funds.'},
+    balanced:{label:'Balanced',invShift:0,debtShift:0,hint:'Blend diversified equity and sukuk/bond funds with regular monthly DCA.'},
+    growth:{label:'Growth',invShift:0.1,debtShift:-0.05,hint:'Higher equity exposure for long-term growth; expect larger ups and downs.'}
+  };
+  const profile=riskCfg[invRisk]||riskCfg.balanced;
 
   if(avail<=0){
-    c.innerHTML=`<h4 class="font-semibold text-sm mb-3" style="color:var(--fg2)"><i class="fas fa-piggy-bank mr-2" style="color:var(--warn)"></i>Surplus Saving & Investment Plan</h4>
+    c.innerHTML=`<div class="flex flex-wrap items-center justify-between gap-2 mb-3"><h4 class="font-semibold text-sm" style="color:var(--fg2)"><i class="fas fa-piggy-bank mr-2" style="color:var(--warn)"></i>Surplus Saving & Investment Plan</h4>
+    <label class="text-xs" style="color:var(--muted)">Risk
+      <select class="input-field" style="padding:6px 10px;font-size:12px;min-width:140px" onchange="setInvRisk(this.value)">
+        <option value="conservative" ${invRisk==='conservative'?'selected':''}>Conservative</option>
+        <option value="balanced" ${invRisk==='balanced'?'selected':''}>Balanced</option>
+        <option value="growth" ${invRisk==='growth'?'selected':''}>Growth</option>
+      </select>
+    </label></div>
     <div class="p-4 rounded-xl" style="background:var(--warn-dim);border:1px solid rgba(255,179,71,.2)">
       <p class="text-sm font-semibold mb-1" style="color:var(--warn)">No investable surplus yet</p>
       <p class="text-xs" style="color:var(--fg2)">Current monthly surplus is RM 0. Focus on expense cuts and/or side income first. Once surplus turns positive, this section will auto-generate a monthly split plan.</p>
@@ -1282,11 +1303,17 @@ function rSurplus(d,r){
     return;
   }
 
-  const pct={
+  const base={
     buf:emergencyGap>0?0.5:0.2,
     debt:hasActive?(emergencyGap>0?0.35:0.3):(emergencyGap>0?0.1:0.1),
     inv:hasActive?(emergencyGap>0?0.15:0.5):(emergencyGap>0?0.4:0.7)
   };
+  let debtPct=Math.max(0.05,base.debt+(hasActive?profile.debtShift:0));
+  let invPct=Math.max(0.1,base.inv+profile.invShift);
+  const scale=(1-base.buf)/(debtPct+invPct);
+  debtPct*=scale;
+  invPct*=scale;
+  const pct={buf:base.buf,debt:debtPct,inv:invPct};
 
   const bufAmt=Math.round(avail*pct.buf);
   const debtAmt=Math.round(avail*pct.debt);
@@ -1301,7 +1328,14 @@ function rSurplus(d,r){
     debtFocus='No active loan detected, keep only a small debt bucket for ad-hoc settlements.';
   }
 
-  c.innerHTML=`<h4 class="font-semibold text-sm mb-3" style="color:var(--fg2)"><i class="fas fa-piggy-bank mr-2" style="color:var(--accent)"></i>Surplus Saving & Investment Plan</h4>
+  c.innerHTML=`<div class="flex flex-wrap items-center justify-between gap-2 mb-3"><h4 class="font-semibold text-sm" style="color:var(--fg2)"><i class="fas fa-piggy-bank mr-2" style="color:var(--accent)"></i>Surplus Saving & Investment Plan</h4>
+  <label class="text-xs" style="color:var(--muted)">Risk
+    <select class="input-field" style="padding:6px 10px;font-size:12px;min-width:140px" onchange="setInvRisk(this.value)">
+      <option value="conservative" ${invRisk==='conservative'?'selected':''}>Conservative</option>
+      <option value="balanced" ${invRisk==='balanced'?'selected':''}>Balanced</option>
+      <option value="growth" ${invRisk==='growth'?'selected':''}>Growth</option>
+    </select>
+  </label></div>
   <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
     <div class="p-3 rounded-xl" style="background:var(--accent-dim);border:1px solid rgba(0,230,138,.2)">
       <div class="text-xs" style="color:var(--muted)">Safety Buffer (${Math.round(pct.buf*100)}%)</div>
@@ -1316,12 +1350,12 @@ function rSurplus(d,r){
     <div class="p-3 rounded-xl" style="background:var(--purple-dim);border:1px solid rgba(181,122,255,.2)">
       <div class="text-xs" style="color:var(--muted)">Investment Bucket (${Math.round(pct.inv*100)}%)</div>
       <div class="text-lg font-bold" style="font-family:'Space Grotesk';color:var(--purple)">RM ${fmt(invAmt)}/mo</div>
-      <p class="text-xs mt-1" style="color:var(--fg2)">Start with diversified low-cost funds or money-market mix.</p>
+      <p class="text-xs mt-1" style="color:var(--fg2)">${profile.hint}</p>
     </div>
   </div>
   <div class="p-3 rounded-xl" style="background:var(--card2);border:1px solid var(--border)">
     <p class="text-xs mb-2" style="color:var(--fg2)"><strong style="color:var(--accent)">Where to separate money each payday:</strong> 1) Bills account 2) Safety buffer account 3) Debt accelerator wallet 4) Investment account.</p>
-    <p class="text-xs" style="color:var(--muted)">Emergency target: RM ${fmt(emergencyTarget)} (${monthsToBuffer?`about ${monthsToBuffer} month(s) to fill remaining RM ${fmt(emergencyGap)}`:'buffer target reached'}). Estimated plan interest: RM ${fmt(r.tInt)}.</p>
+    <p class="text-xs" style="color:var(--muted)">Risk profile: ${profile.label}. Emergency target: RM ${fmt(emergencyTarget)} (${monthsToBuffer?`about ${monthsToBuffer} month(s) to fill remaining RM ${fmt(emergencyGap)}`:'buffer target reached'}). Estimated plan interest: RM ${fmt(r.tInt)}.</p>
   </div>`;
 }
 
@@ -1444,7 +1478,7 @@ function rTips(d,r){
 }
 
 // ── Reset ──
-function reset(){sIncomes=[];debts=[];strat='avalanche';res=null;scheduleDisplayLimit=SCHEDULE_CHUNK_SIZE;$('salary').value='';$('savings').value='';['cRent','cUtil','cFood','cTrans','cPhone','cIns','cOther'].forEach(i=>$(i).value='');rSI();rD();scheduleDraftSave(true);go(1);toast('Reset complete')}
+function reset(){sIncomes=[];debts=[];strat='avalanche';invRisk='balanced';res=null;scheduleDisplayLimit=SCHEDULE_CHUNK_SIZE;$('salary').value='';$('savings').value='';['cRent','cUtil','cFood','cTrans','cPhone','cIns','cOther'].forEach(i=>$(i).value='');rSI();rD();scheduleDraftSave(true);go(1);toast('Reset complete')}
 
 // ── Init ──
 if(!loadDraftState()){addSI();addDebt('','active','','','','','','');rSI();rD()}
